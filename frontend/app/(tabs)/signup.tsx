@@ -1,4 +1,3 @@
-import Checkbox from 'expo-checkbox';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -14,18 +13,27 @@ import {
 } from 'react-native';
 
 export default function SignupScreen() {
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  /* -------------------- STATE -------------------- */
+  const [selectedRole, setSelectedRole] = useState('');
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [genderOpen, setGenderOpen] = useState(false);
+
+  const [dobDay, setDobDay] = useState('');
+  const [dobMonth, setDobMonth] = useState('');
+  const [dobYear, setDobYear] = useState('');
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     phone: '',
     email: '',
-    password: '',   // ✅ ADDED
+    password: '',
     address: '',
     dateOfBirth: '',
     gender: '',
   });
 
+  /* -------------------- ANIMATION -------------------- */
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const riseAnim = useRef(new Animated.Value(40)).current;
   const logoFloat = useRef(new Animated.Value(0)).current;
@@ -62,6 +70,7 @@ export default function SignupScreen() {
     ).start();
   }, []);
 
+  /* -------------------- HANDLERS -------------------- */
   const handleInputChange = (field: string, value: string) => {
     setFormData({ ...formData, [field]: value });
   };
@@ -72,61 +81,60 @@ export default function SignupScreen() {
       return;
     }
 
-    console.log('Signup Data:', { role: selectedRole, ...formData });
-    alert(`${selectedRole} registered successfully!`);
+    console.log('Signup Data:', {
+      role: selectedRole,
+      ...formData,
+    });
+
+    alert('Account created successfully!');
   };
 
+  /* -------------------- UI -------------------- */
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      showsVerticalScrollIndicator={false}
-    >
+    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Background glow */}
       <View style={styles.glowTop} />
       <View style={styles.glowBottom} />
 
-      <Animated.View
-        style={[
-          styles.card,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: riseAnim }],
-          },
-        ]}
-      >
+      <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: riseAnim }] }]}>
         {/* Logo */}
         <Animated.View style={{ transform: [{ translateY: logoFloat }] }}>
-          <Image
-            source={require('@/assets/images/logo_osra.png')}
-            style={styles.logo}
-          />
+          <Image source={require('@/assets/images/logo_osra.png')} style={styles.logo} />
         </Animated.View>
 
         <Text style={styles.title}>Create an Account</Text>
 
-        {/* Role Selection */}
-        <View style={styles.checkboxContainer}>
-          {['Patient', 'Doctor', 'Admin'].map((role) => (
-            <View key={role} style={styles.checkboxRow}>
-              <Checkbox
-                value={selectedRole === role}
-                onValueChange={() => setSelectedRole(role)}
-                color={selectedRole === role ? '#2563eb' : undefined}
-              />
-              <Text style={styles.checkboxLabel}>{role}</Text>
+        {/* -------- Role Dropdown -------- */}
+        <View style={styles.dropdownContainer}>
+          <TouchableOpacity style={styles.dropdown} onPress={() => setRoleOpen(!roleOpen)}>
+            <Text style={styles.dropdownText}>{selectedRole || 'Select Role'}</Text>
+          </TouchableOpacity>
+
+          {roleOpen && (
+            <View style={styles.dropdownMenu}>
+              {['Patient', 'Doctor'].map((role) => (
+                <TouchableOpacity
+                  key={role}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedRole(role);
+                    setRoleOpen(false);
+                  }}
+                >
+                  <Text style={styles.dropdownItemText}>{role}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ))}
+          )}
         </View>
 
-        {/* Common Fields */}
+        {/* -------- Common Fields -------- */}
         <TextInput
           style={styles.input}
           placeholder="First Name"
           placeholderTextColor="#94a3b8"
           value={formData.firstName}
-          onChangeText={(text) =>
-            handleInputChange('firstName', text)
-          }
+          onChangeText={(t) => handleInputChange('firstName', t)}
         />
 
         <TextInput
@@ -134,46 +142,37 @@ export default function SignupScreen() {
           placeholder="Last Name"
           placeholderTextColor="#94a3b8"
           value={formData.lastName}
-          onChangeText={(text) =>
-            handleInputChange('lastName', text)
-          }
+          onChangeText={(t) => handleInputChange('lastName', t)}
         />
 
         <TextInput
           style={styles.input}
           placeholder="Phone"
-          placeholderTextColor="#94a3b8"
           keyboardType="phone-pad"
+          placeholderTextColor="#94a3b8"
           value={formData.phone}
-          onChangeText={(text) =>
-            handleInputChange('phone', text)
-          }
+          onChangeText={(t) => handleInputChange('phone', t)}
         />
 
         <TextInput
           style={styles.input}
           placeholder="Email"
-          placeholderTextColor="#94a3b8"
           keyboardType="email-address"
+          placeholderTextColor="#94a3b8"
           value={formData.email}
-          onChangeText={(text) =>
-            handleInputChange('email', text)
-          }
+          onChangeText={(t) => handleInputChange('email', t)}
         />
 
-        {/* ✅ PASSWORD FIELD (ADDED) */}
         <TextInput
           style={styles.input}
           placeholder="Password"
-          placeholderTextColor="#94a3b8"
           secureTextEntry
+          placeholderTextColor="#94a3b8"
           value={formData.password}
-          onChangeText={(text) =>
-            handleInputChange('password', text)
-          }
+          onChangeText={(t) => handleInputChange('password', t)}
         />
 
-        {/* Role-Specific Fields */}
+        {/* -------- Patient Fields -------- */}
         {selectedRole === 'Patient' && (
           <>
             <TextInput
@@ -181,43 +180,117 @@ export default function SignupScreen() {
               placeholder="Address"
               placeholderTextColor="#94a3b8"
               value={formData.address}
-              onChangeText={(text) =>
-                handleInputChange('address', text)
-              }
+              onChangeText={(t) => handleInputChange('address', t)}
             />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Date of Birth"
-              placeholderTextColor="#94a3b8"
-              value={formData.dateOfBirth}
-              onChangeText={(text) =>
-                handleInputChange('dateOfBirth', text)
-              }
-            />
+            {/* -------- Date of Birth Simple Dropdown -------- */}
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+              {/* Day */}
+              <View style={styles.dropdownContainerSmall}>
+                <TouchableOpacity style={styles.dropdown}>
+                  <Text style={styles.dropdownText}>{dobDay || 'Day'}</Text>
+                </TouchableOpacity>
+                <View style={styles.dropdownMenu}>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                    <TouchableOpacity
+                      key={d}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setDobDay(String(d));
+                        handleInputChange(
+                          'dateOfBirth',
+                          `${dobYear || 'YYYY'}-${dobMonth || 'MM'}-${d}`
+                        );
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Gender"
-              placeholderTextColor="#94a3b8"
-              value={formData.gender}
-              onChangeText={(text) =>
-                handleInputChange('gender', text)
-              }
-            />
+              {/* Month */}
+              <View style={styles.dropdownContainerSmall}>
+                <TouchableOpacity style={styles.dropdown}>
+                  <Text style={styles.dropdownText}>{dobMonth || 'Month'}</Text>
+                </TouchableOpacity>
+                <View style={styles.dropdownMenu}>
+                  {[
+                    '01','02','03','04','05','06','07','08','09','10','11','12'
+                  ].map((m) => (
+                    <TouchableOpacity
+                      key={m}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setDobMonth(m);
+                        handleInputChange(
+                          'dateOfBirth',
+                          `${dobYear || 'YYYY'}-${m}-${dobDay || 'DD'}`
+                        );
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>{m}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Year */}
+              <View style={styles.dropdownContainerSmall}>
+                <TouchableOpacity style={styles.dropdown}>
+                  <Text style={styles.dropdownText}>{dobYear || 'Year'}</Text>
+                </TouchableOpacity>
+                <View style={styles.dropdownMenu}>
+                  {Array.from({ length: 100 }, (_, i) => 2025 - i).map((y) => (
+                    <TouchableOpacity
+                      key={y}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setDobYear(String(y));
+                        handleInputChange(
+                          'dateOfBirth',
+                          `${y}-${dobMonth || 'MM'}-${dobDay || 'DD'}`
+                        );
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>{y}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* -------- Gender Dropdown -------- */}
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity style={styles.dropdown} onPress={() => setGenderOpen(!genderOpen)}>
+                <Text style={styles.dropdownText}>{formData.gender || 'Select Gender'}</Text>
+              </TouchableOpacity>
+
+              {genderOpen && (
+                <View style={styles.dropdownMenu}>
+                  {['Male', 'Female'].map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        handleInputChange('gender', g);
+                        setGenderOpen(false);
+                      }}
+                    >
+                      <Text style={styles.dropdownItemText}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
           </>
         )}
 
-        {/* Signup Button */}
-        <TouchableOpacity
-          style={styles.button}
-          activeOpacity={0.85}
-          onPress={handleSignup}
-        >
+        {/* -------- Submit -------- */}
+        <TouchableOpacity style={styles.button} onPress={handleSignup}>
           <Text style={styles.buttonText}>Sign Up</Text>
         </TouchableOpacity>
 
-        {/* Login link */}
         <Text style={styles.loginText}>
           Already have an account?{' '}
           <Link href="/login" style={styles.loginLink}>
@@ -229,6 +302,7 @@ export default function SignupScreen() {
   );
 }
 
+/* -------------------- STYLES -------------------- */
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -266,7 +340,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 30,
     alignItems: 'center',
-
     shadowColor: '#2563eb',
     shadowOpacity: 0.15,
     shadowOffset: { width: 0, height: 10 },
@@ -274,11 +347,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 
-  logo: {
-    width: 90,
-    height: 90,
-    marginBottom: 8,
-  },
+  logo: { width: 90, height: 90, marginBottom: 8 },
 
   title: {
     fontSize: 26,
@@ -287,34 +356,62 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
-  checkboxContainer: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    gap: 18,
-  },
-
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-
-  checkboxLabel: {
-    fontSize: 15,
-    color: '#1f2933',
-  },
-
   input: {
     width: '100%',
     height: 52,
     backgroundColor: '#f1f5f9',
     borderRadius: 50,
     paddingHorizontal: 20,
-    borderColor: '#e2e8f0',
     borderWidth: 1,
+    borderColor: '#e2e8f0',
     fontSize: 15,
     color: '#0f172a',
     marginBottom: 14,
+    justifyContent: 'center',
+  },
+
+  dropdownContainer: {
+    width: '100%',
+    marginBottom: 14,
+  },
+
+  dropdownContainerSmall: {
+    flex: 1,
+  },
+
+  dropdown: {
+    height: 52,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 50,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    justifyContent: 'center',
+  },
+
+  dropdownText: {
+    fontSize: 15,
+    color: '#0f172a',
+  },
+
+  dropdownMenu: {
+    backgroundColor: '#ffffff',
+    borderRadius: 18,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    maxHeight: 140,
+    overflow: 'scroll',
+  },
+
+  dropdownItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+
+  dropdownItemText: {
+    fontSize: 15,
+    color: '#1f2937',
   },
 
   button: {
@@ -325,11 +422,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563eb',
     alignItems: 'center',
     justifyContent: 'center',
-
-    shadowColor: '#2563eb',
-    shadowOpacity: 0.4,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 5 },
     elevation: 6,
   },
 
@@ -337,7 +429,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 17,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
 
   loginText: {
