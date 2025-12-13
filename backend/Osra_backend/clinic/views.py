@@ -15,3 +15,20 @@ class DentistViewSet(ModelViewSet):
 class AppointmentViewSet(ModelViewSet):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
+
+class AppointmentTreatmentViewSet(ModelViewSet):
+    queryset = AppointmentTreatment.objects.all()
+    serializer_class = AppointmentTreatmentSerializer
+
+class TreatmentDrugViewSet(ModelViewSet):
+    queryset = TreatmentDrug.objects.all()
+    serializer_class = TreatmentDrugSerializer
+
+class InvoiceViewSet(ModelViewSet):
+    queryset = Invoice.objects.all()
+    serializer_class = InvoiceSerializer
+
+class PaymentViewSet(ModelViewSet):
+    queryset = Payment.objects.all()
+    serializer_class = PaymentSerializer
+
