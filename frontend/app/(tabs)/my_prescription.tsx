@@ -8,8 +8,8 @@ type RecordItem = {
   dentist: string;
   diagnosis: string;
   treatmentNotes: string;
-  drugs: string;
-  dosage: string;
+  drugs: { name: string; dosage: string }[];
+  followUpDate: string;
 };
 
 const RECORDS: RecordItem[] = [
@@ -19,8 +19,8 @@ const RECORDS: RecordItem[] = [
     dentist: 'Dr. Smith',
     diagnosis: 'Cavity in molar',
     treatmentNotes: 'Filled cavity using composite material.',
-    drugs: 'Painkiller',
-    dosage: '2x per day',
+    drugs: [{ name: 'Painkiller', dosage: '2x per day' }],
+    followUpDate: '2023-11-01',
   },
   {
     id: 'r2',
@@ -28,18 +28,18 @@ const RECORDS: RecordItem[] = [
     dentist: 'Dr. Jones',
     diagnosis: 'Routine Check-up',
     treatmentNotes: 'Teeth cleaned and fluoride applied.',
-    drugs: 'None',
-    dosage: 'N/A',
+    drugs: [],
+    followUpDate: '2023-08-01',
   },
 ];
 
-export default function MedicalRecord() {
+export default function MyPrescription() {
   const [selectedRecord, setSelectedRecord] = useState<RecordItem | null>(null);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
       <ScrollView style={styles.page} contentContainerStyle={styles.content}>
-        <Text style={styles.pageTitle}>Medical Records</Text>
+        <Text style={styles.pageTitle}>My Prescriptions</Text>
         <Text style={styles.subText}>View your electronic medical records (EMR).</Text>
 
         <FlatList
@@ -50,36 +50,53 @@ export default function MedicalRecord() {
           )}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         />
-
         <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Modal for detailed record view */}
-      <Modal visible={!!selectedRecord} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {selectedRecord && (
-              <>
-                <Text style={styles.recordTitle}>Date: {selectedRecord.date}</Text>
-                <Text style={styles.recordSub}>Dentist: {selectedRecord.dentist}</Text>
-                <Text style={styles.sectionTitle}>Diagnosis</Text>
-                <Text style={styles.recordText}>{selectedRecord.diagnosis}</Text>
-                <Text style={styles.sectionTitle}>Treatment Notes</Text>
-                <Text style={styles.recordText}>{selectedRecord.treatmentNotes}</Text>
-                <Text style={styles.sectionTitle}>Drugs</Text>
-                <Text style={styles.recordText}>{selectedRecord.drugs}</Text>
-                <Text style={styles.sectionTitle}>Dosage</Text>
-                <Text style={styles.recordText}>{selectedRecord.dosage}</Text>
+      <Modal visible={!!selectedRecord} animationType="slide" transparent={false}>
+        <View style={styles.modalContent}>
+          {selectedRecord && (
+            <ScrollView contentContainerStyle={{ padding: 20 }}>
+              {/* Top-right X button */}
+              <TouchableOpacity
+                style={styles.closeXBtn}
+                onPress={() => setSelectedRecord(null)}
+              >
+                <Text style={styles.closeXText}>✕</Text>
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.closeBtn}
-                  onPress={() => setSelectedRecord(null)}
-                >
-                  <Text style={styles.closeBtnText}>Close</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+              <Text style={styles.recordTitle}>Date: {selectedRecord.date}</Text>
+              <Text style={styles.recordSub}>Dentist: {selectedRecord.dentist}</Text>
+
+              <Text style={styles.sectionTitle}>Diagnosis</Text>
+              <Text style={styles.recordText}>{selectedRecord.diagnosis}</Text>
+
+              <Text style={styles.sectionTitle}>Treatment Notes</Text>
+              <Text style={styles.recordText}>{selectedRecord.treatmentNotes}</Text>
+
+              <Text style={styles.sectionTitle}>Prescribed Drugs</Text>
+              {selectedRecord.drugs.length > 0 ? (
+                selectedRecord.drugs.map((drug, index) => (
+                  <Text key={index} style={styles.recordText}>
+                    {drug.name} - {drug.dosage}
+                  </Text>
+                ))
+              ) : (
+                <Text style={styles.recordText}>None</Text>
+              )}
+
+              <Text style={styles.sectionTitle}>Follow-up Date</Text>
+              <Text style={styles.recordText}>{selectedRecord.followUpDate}</Text>
+
+              <TouchableOpacity
+                style={styles.closeBtn}
+                onPress={() => setSelectedRecord(null)}
+              >
+                <Text style={styles.closeBtnText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
         </View>
       </Modal>
     </View>
@@ -90,13 +107,15 @@ export default function MedicalRecord() {
 
 function RecordRow({ item, onPress }: { item: RecordItem; onPress: () => void }) {
   return (
-    <TouchableOpacity onPress={onPress} style={[styles.card, { flexDirection: 'column', padding: 16 }]}>
+    <TouchableOpacity
+      style={[styles.card, { flexDirection: 'column', padding: 16 }]}
+    >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
         <Text style={styles.rowTitle}>{item.date}</Text>
         <Text style={styles.rowSub}>{item.dentist}</Text>
       </View>
       <Text style={styles.rowSub}>Diagnosis: {item.diagnosis}</Text>
-      <TouchableOpacity style={styles.viewBtn}>
+      <TouchableOpacity style={styles.viewBtn} onPress={onPress}>
         <Text style={styles.viewBtnText}>View Details</Text>
       </TouchableOpacity>
     </TouchableOpacity>
@@ -132,18 +151,27 @@ const styles = StyleSheet.create({
   viewBtnText: { color: '#10B981', fontWeight: '700' },
 
   // Modal
-  modalOverlay: {
+  modalContent: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: CARD_BG,
+  },
+
+  closeXBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 10,
+    backgroundColor: '#E5E7EB',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
-    width: '90%',
-    backgroundColor: CARD_BG,
-    borderRadius: 12,
-    padding: 20,
-    ...CARD_SHADOW,
+  closeXText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0f172a',
   },
 
   recordTitle: { fontSize: 18, fontWeight: '700', marginBottom: 4 },

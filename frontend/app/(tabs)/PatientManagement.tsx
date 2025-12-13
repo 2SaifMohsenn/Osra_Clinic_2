@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { CARD_BG, CARD_SHADOW, PRIMARY } from './PatientDashboard';
 
+
+
 // Dummy patient data
 const INITIAL_PATIENTS = [
   { id: 1, name: 'John Smith', phone: '+1 234 567 890', email: 'john.smith@example.com' },
