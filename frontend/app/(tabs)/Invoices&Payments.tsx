@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { CARD_BG, CARD_SHADOW, PRIMARY } from './PatientDashboard';
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+
 
 const INITIAL_INVOICES = [
   { id: 1, invoiceId: 'INV-001', patient: 'John Doe', date: '2025-10-10', amount: '$200', status: 'Paid' },

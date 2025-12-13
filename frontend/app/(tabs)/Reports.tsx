@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart, LineChart } from 'react-native-chart-kit';
-import { CARD_BG, CARD_SHADOW, PRIMARY } from './PatientDashboard';
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+const MUTED = '#64748B';
 
 const screenWidth = Dimensions.get('window').width - 40;
 
@@ -38,6 +39,7 @@ export default function Reports() {
             width={screenWidth}
             height={220}
             yAxisLabel=""
+            yAxisSuffix=""
             chartConfig={{
               backgroundColor: CARD_BG,
               backgroundGradientFrom: '#E0F2FE',

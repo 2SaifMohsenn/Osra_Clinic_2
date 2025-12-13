@@ -8,7 +8,8 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { CARD_BG, CARD_SHADOW, MUTED } from './PatientDashboard'; // reuse constants
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+const MUTED = '#64748B';
 
 type Appointment = {
   id: string;

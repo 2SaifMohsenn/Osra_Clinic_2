@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { CARD_BG, CARD_SHADOW, PRIMARY } from './PatientDashboard';
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+
 
 // Dummy dentist data
 const INITIAL_DENTISTS = [

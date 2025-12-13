@@ -79,7 +79,7 @@ export default function DoctorDashboard() {
 
   const handleNavigation = (path: string) => {
     closeSidebar();
-    setTimeout(() => router.push(path), 260);
+    setTimeout(() => router.push(path as any), 260);
   };
 
   return (
@@ -204,6 +204,7 @@ const styles = StyleSheet.create({
   sideNavText: { fontWeight: '700', color: COLOR_TEXT, fontSize: 15 },
 
   mainContent: { flex: 1, padding: 18 },
+  content: { paddingBottom: 24 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
   hamburgerBtn: { width: 44, height: 44, justifyContent: 'center', gap: 4 },
   hamLine: { width: 22, height: 2.5, backgroundColor: COLOR_TEXT, borderRadius: 2 },

@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { CARD_BG, CARD_SHADOW, PRIMARY } from './PatientDashboard';
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+
 
 const INITIAL_TREATMENTS = [
   { id: 1, name: 'Teeth Whitening', category: 'Cosmetic', cost: '$120', description: 'Removes stains for a bright smile.' },
