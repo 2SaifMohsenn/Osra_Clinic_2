@@ -45,6 +45,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: '🏠', path: '/DoctorDashboard' },
   { label: 'Appointments', icon: '🗓️', path: '/DentistAppointments' },
   { label: 'My Patients', icon: '🧍‍♂️', path: '/MyPatients' },
+  { label: 'EMR', icon: '🗂️', path: '/Doctor_Emr' },
   { label: 'Prescription', icon: '🩺', path: '/Prescription' },
   { label: 'Treatments & Drugs', icon: '💊', path: '/TreatmentsDrugs' },
   { label: 'Reports', icon: '📊', path: '/Reports' },
