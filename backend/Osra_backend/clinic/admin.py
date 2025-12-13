@@ -12,3 +12,4 @@ admin.site.register(TreatmentDrug)
 admin.site.register(Invoice)
 admin.site.register(Payment)
 
+

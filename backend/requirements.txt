@@ -1,0 +1,7 @@
+Django>=5.0
+djangorestframework>=3.13
+pillow>=9.0
+pytesseract>=0.3.10
+django-cors-headers>=4.9.0
+# Optional for PDF support: install poppler and pyPDF2 or pdf2image
+# pdf2image>=1.16
