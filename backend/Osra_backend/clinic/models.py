@@ -64,5 +64,33 @@ class MedicalRecord(models.Model):
     treatment_notes = models.TextField()
     record_date = models.DateTimeField(auto_now_add=True)
 
+class AppointmentTreatment(models.Model):
+    appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE)
+    treatment = models.ForeignKey(Treatment, on_delete=models.CASCADE)
+    quantity = models.IntegerField()
+    notes = models.TextField(blank=True)
+
+    def subtotal(self):
+        return self.quantity * self.treatment.cost
+
+class TreatmentDrug(models.Model):
+    treatment = models.ForeignKey(Treatment, on_delete=models.CASCADE)
+    drug = models.ForeignKey(Drug, on_delete=models.CASCADE)
+    dosage_used = models.CharField(max_length=100)
+
+
+class Invoice(models.Model):
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE)
+    date_issued = models.DateField(auto_now_add=True)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(max_length=50)
+
+
+class Payment(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE)
+    payment_date = models.DateField(auto_now_add=True)
+    amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
+
+
 
 
