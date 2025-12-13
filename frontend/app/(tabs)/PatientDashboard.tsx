@@ -1,4 +1,5 @@
 // PatientDashboard.tsx
+
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -71,7 +72,7 @@ export default function PatientDashboard() {
     { label: 'Billing', icon: '💳', route: '/billing' },
     { label: 'My Prescription', icon: '🩺', route: '/my_prescription' },
     { label: 'Logout', icon: '🚪', route: '/login' },
-  ];
+  ] as const;
 
   // Sidebar state + animated values
   const [open, setOpen] = useState(false);
@@ -214,7 +215,7 @@ export default function PatientDashboard() {
                 key={item.route}
                 onPress={() => {
                   closeSidebar();
-                  setTimeout(() => router.push(item.route), 260); // allow animation to finish
+                  setTimeout(() => router.push(item.route), 260); 
                 }}
                 style={({ pressed }) => [
                   styles.sideNavItem,

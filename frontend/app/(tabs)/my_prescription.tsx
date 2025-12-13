@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { CARD_BG, CARD_SHADOW, MUTED, PRIMARY } from './PatientDashboard'; // Reuse constants
+import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+const MUTED = '#6B7280';
 
 type RecordItem = {
   id: string;

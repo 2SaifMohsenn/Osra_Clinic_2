@@ -1,4 +1,3 @@
-// app/(tabs)/book-appointment.tsx
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import {

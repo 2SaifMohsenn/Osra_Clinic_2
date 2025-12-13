@@ -70,7 +70,7 @@ export default function AdminDashboard() {
 
   const handleNavigation = (path: string) => {
     closeSidebar();
-    setTimeout(() => router.push(path), 260);
+    setTimeout(() => router.push(path as any), 260);
   };
 
   return (
