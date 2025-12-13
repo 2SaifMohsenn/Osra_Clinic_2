@@ -67,6 +67,7 @@ export default function PatientDashboard() {
     { label: 'Profile', icon: '👤', route: '/profile' },
     { label: 'Book', icon: '📅', route: '/book-appointment' },
     { label: 'My Appointments', icon: '📝', route: '/my-appointment' },
+    { label: 'EMR', icon : '🗂️', route: '/Patient_Emr' },
     { label: 'Billing', icon: '💳', route: '/billing' },
     { label: 'My Prescription', icon: '🩺', route: '/my_prescription' },
     { label: 'Logout', icon: '🚪', route: '/login' },
