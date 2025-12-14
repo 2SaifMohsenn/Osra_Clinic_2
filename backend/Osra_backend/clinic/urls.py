@@ -1,6 +1,6 @@
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import *  # import your viewsets here
+from .views import *  # import your viewsets and additional views here
 
 # Create the router and register your viewsets
 router = DefaultRouter()
@@ -12,5 +12,8 @@ router.register("treatment-drugs", TreatmentDrugViewSet)
 router.register("invoices", InvoiceViewSet)
 router.register("payments", PaymentViewSet)
 
-# Use router.urls as urlpatterns
-urlpatterns = router.urls
+urlpatterns = router.urls + [
+	path('process/ocr/', ocr_process_view, name='process-ocr'),
+	path('process/acr/', acr_process_view, name='process-acr'),
+	path('process/nlp/', nlp_process_view, name='process-nlp'),
+]

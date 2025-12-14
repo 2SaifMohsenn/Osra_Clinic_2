@@ -13,16 +13,21 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as DocumentPicker from 'expo-document-picker';
+import { processOCR, processACR, processNLP } from '../../services';
 
-// Define your stack param types
+// ================= Navigation Types =================
 type RootStackParamList = {
   Doctor_Emr: undefined;
-  Prescription: undefined; // add params here if needed
+  Prescription: undefined;
 };
 
-// Define navigation prop type
-type DoctorEmrNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Doctor_Emr'>;
+type DoctorEmrNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Doctor_Emr'
+>;
 
+// ================= Interfaces =================
 interface PatientInfo {
   name: string;
   age: number;
@@ -41,9 +46,9 @@ interface Prescription {
 
 interface LabResult {
   id: string;
-  test: string;
-  result: string;
-  date: string;
+  fileName: string;
+  fileUri: string;
+  fileType: string;
 }
 
 interface MedicalHistory {
@@ -53,10 +58,12 @@ interface MedicalHistory {
   chronicConditions: string[];
 }
 
+// ================= Component =================
 const Doctor_Emr = () => {
   const navigation = useNavigation<DoctorEmrNavigationProp>();
 
-  const [patient, setPatient] = useState<PatientInfo>({
+  // ================= States =================
+  const [patient] = useState<PatientInfo>({
     name: 'John Doe',
     age: 35,
     gender: 'Male',
@@ -71,26 +78,43 @@ const Doctor_Emr = () => {
     chronicConditions: ['Diabetes'],
   });
 
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([
-    { id: '1', medicine: 'Metformin', dosage: '500mg', duration: '30 days', notes: 'Take after meals' },
+  const [prescriptions] = useState<Prescription[]>([
+    {
+      id: '1',
+      medicine: 'Metformin',
+      dosage: '500mg',
+      duration: '30 days',
+      notes: 'Take after meals',
+    },
   ]);
 
-  const [labResults, setLabResults] = useState<LabResult[]>([
-    { id: '1', test: 'Blood Sugar', result: '110 mg/dL', date: '2025-12-10' },
-  ]);
+  const [labResults, setLabResults] = useState<LabResult[]>([]);
 
-  // Modal states
+  const [doctorNotes, setDoctorNotes] = useState('');
+  // Processing (OCR/ACR/NLP)
+  const [processingFile, setProcessingFile] = useState<LabResult | null>(null);
+  const [ocrResult, setOcrResult] = useState<any | null>(null);
+  const [acrResult, setAcrResult] = useState<any | null>(null);
+  const [nlpInput, setNlpInput] = useState<string>('');
+  const [nlpResult, setNlpResult] = useState<any | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  // ================= Modals =================
   const [historyModalVisible, setHistoryModalVisible] = useState(false);
   const [labModalVisible, setLabModalVisible] = useState(false);
 
-  // Temp states for editing
-  const [editHistory, setEditHistory] = useState<MedicalHistory>({ ...medicalHistory });
-  const [newLab, setNewLab] = useState<LabResult>({ id: '', test: '', result: '', date: '' });
+  const [editHistory, setEditHistory] = useState<MedicalHistory>({
+    ...medicalHistory,
+  });
 
-  // Doctor notes
-  const [doctorNotes, setDoctorNotes] = useState<string>('');
+  const [newLab, setNewLab] = useState<LabResult>({
+    id: '',
+    fileName: '',
+    fileUri: '',
+    fileType: '',
+  });
 
-  // Animations
+  // ================= Animation =================
   const fadeAnim = new Animated.Value(0);
 
   useEffect(() => {
@@ -102,36 +126,148 @@ const Doctor_Emr = () => {
     }).start();
   }, []);
 
-  // Handlers
-  const handleUpdateHistory = () => setHistoryModalVisible(true);
-  const handleAddLabResult = () => setLabModalVisible(true);
+  // ================= Handlers =================
+  const handleAddPrescription = () => {
+    navigation.navigate('Prescription');
+  };
+
   const handleSaveHistory = () => {
     setMedicalHistory(editHistory);
     setHistoryModalVisible(false);
   };
+
+  const handleSaveNotes = () => {
+    console.log('Doctor Notes:', doctorNotes);
+    alert('Doctor notes saved successfully');
+  };
+
+  // ================= File Picker =================
+  const pickLabFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+
+    if (!result.canceled) {
+      const file = result.assets[0];
+      setNewLab({
+        ...newLab,
+        fileName: file.name,
+        fileUri: file.uri,
+        fileType: file.mimeType || 'unknown',
+      });
+    }
+  };
+
+  const pickProcessingFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*', 'audio/*'],
+      copyToCacheDirectory: true,
+    });
+
+    if (!result.canceled) {
+      const file = result.assets[0];
+      const picked: LabResult = {
+        id: '',
+        fileName: file.name,
+        fileUri: file.uri,
+        fileType: file.mimeType || 'unknown',
+      };
+      setProcessingFile(picked);
+    }
+  };
+
+  const handleRunOCR = async () => {
+    if (!processingFile?.fileUri) {
+      alert('Please choose a file to process for OCR');
+      return;
+    }
+    try {
+      setProcessing(true);
+      const res = await processOCR(processingFile);
+      setOcrResult(res);
+      // Optionally populate NLP input with extracted text
+      if (res?.text) setNlpInput(typeof res.text === 'string' ? res.text : JSON.stringify(res.text));
+    } catch (err) {
+      console.warn('OCR failed', err);
+      const errMsg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as any).message)
+          : String(err);
+      alert(`OCR failed: ${errMsg}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRunACR = async () => {
+    if (!processingFile?.fileUri) {
+      alert('Please choose a file to process for ACR');
+      return;
+    }
+    try {
+      setProcessing(true);
+      const res = await processACR(processingFile);
+      setAcrResult(res);
+    } catch (err) {
+      console.warn('ACR failed', err);
+      const errMsg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as any).message)
+          : String(err);
+      alert(`ACR failed: ${errMsg}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRunNLP = async () => {
+    if (!nlpInput || nlpInput.trim().length === 0) {
+      alert('Please provide text to analyze with NLP');
+      return;
+    }
+    try {
+      setProcessing(true);
+      const res = await processNLP(nlpInput);
+      setNlpResult(res);
+    } catch (err) {
+      console.warn('NLP failed', err);
+      const errMsg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as any).message)
+          : String(err);
+      alert(`NLP failed: ${errMsg}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleSaveLabResult = () => {
-    setLabResults([...labResults, { ...newLab, id: (labResults.length + 1).toString() }]);
-    setNewLab({ id: '', test: '', result: '', date: '' });
+    if (!newLab.fileUri) {
+      alert('Please upload a lab file');
+      return;
+    }
+
+    setLabResults([
+      ...labResults,
+      { ...newLab, id: (labResults.length + 1).toString() },
+    ]);
+
+    setNewLab({ id: '', fileName: '', fileUri: '', fileType: '' });
     setLabModalVisible(false);
   };
 
-  const handleAddPrescription = () => {
-    navigation.navigate('Prescription'); // ✅ Typed navigation
-  };
-
-  const handleSaveNotes = () => {
-    // Save doctor notes (currently just alerts; connect to backend if needed)
-    console.log('Doctor Notes Saved:', doctorNotes);
-    alert('Doctor notes saved successfully!');
-  };
-
+  // ================= Animated Section =================
   const AnimatedSection = ({ children }: { children: React.ReactNode }) => (
     <Animated.View
       style={{
         opacity: fadeAnim,
         transform: [
           {
-            translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+            translateY: fadeAnim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [20, 0],
+            }),
           },
         ],
       }}
@@ -140,6 +276,7 @@ const Doctor_Emr = () => {
     </Animated.View>
   );
 
+  // ================= UI =================
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Patient Info */}
@@ -158,11 +295,24 @@ const Doctor_Emr = () => {
       <AnimatedSection>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medical History</Text>
-          <Text style={styles.textItem}>Diagnoses: {medicalHistory.diagnoses.join(', ')}</Text>
-          <Text style={styles.textItem}>Surgeries: {medicalHistory.surgeries.join(', ')}</Text>
-          <Text style={styles.textItem}>Allergies: {medicalHistory.allergies.join(', ')}</Text>
-          <Text style={styles.textItem}>Chronic Conditions: {medicalHistory.chronicConditions.join(', ')}</Text>
-          <TouchableOpacity style={styles.button} onPress={handleUpdateHistory} activeOpacity={0.8}>
+          <Text style={styles.textItem}>
+            Diagnoses: {medicalHistory.diagnoses.join(', ')}
+          </Text>
+          <Text style={styles.textItem}>
+            Surgeries: {medicalHistory.surgeries.join(', ')}
+          </Text>
+          <Text style={styles.textItem}>
+            Allergies: {medicalHistory.allergies.join(', ')}
+          </Text>
+          <Text style={styles.textItem}>
+            Chronic Conditions:{' '}
+            {medicalHistory.chronicConditions.join(', ')}
+          </Text>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => setHistoryModalVisible(true)}
+          >
             <Text style={styles.buttonText}>Update Medical History</Text>
           </TouchableOpacity>
         </View>
@@ -177,14 +327,22 @@ const Doctor_Emr = () => {
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.card}>
-                <Text style={styles.textItem}>Medicine: {item.medicine}</Text>
+                <Text style={styles.textItem}>
+                  Medicine: {item.medicine}
+                </Text>
                 <Text style={styles.textItem}>Dosage: {item.dosage}</Text>
-                <Text style={styles.textItem}>Duration: {item.duration}</Text>
+                <Text style={styles.textItem}>
+                  Duration: {item.duration}
+                </Text>
                 <Text style={styles.textItem}>Notes: {item.notes}</Text>
               </View>
             )}
           />
-          <TouchableOpacity style={styles.button} onPress={handleAddPrescription} activeOpacity={0.8}>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleAddPrescription}
+          >
             <Text style={styles.buttonText}>Add Prescription</Text>
           </TouchableOpacity>
         </View>
@@ -194,18 +352,26 @@ const Doctor_Emr = () => {
       <AnimatedSection>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Lab Results</Text>
+
           <FlatList
             data={labResults}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <View style={styles.card}>
-                <Text style={styles.textItem}>Test: {item.test}</Text>
-                <Text style={styles.textItem}>Result: {item.result}</Text>
-                <Text style={styles.textItem}>Date: {item.date}</Text>
+                <Text style={styles.textItem}>
+                  File: {item.fileName}
+                </Text>
+                <Text style={styles.textItem}>
+                  Type: {item.fileType}
+                </Text>
               </View>
             )}
           />
-          <TouchableOpacity style={styles.button} onPress={handleAddLabResult} activeOpacity={0.8}>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => setLabModalVisible(true)}
+          >
             <Text style={styles.buttonText}>Add Lab Result</Text>
           </TouchableOpacity>
         </View>
@@ -219,59 +385,122 @@ const Doctor_Emr = () => {
             style={styles.textInput}
             multiline
             placeholder="Write your notes here..."
-            placeholderTextColor="#888"
             value={doctorNotes}
             onChangeText={setDoctorNotes}
           />
-          <TouchableOpacity style={styles.button} onPress={handleSaveNotes} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.button} onPress={handleSaveNotes}>
             <Text style={styles.buttonText}>Save Notes</Text>
           </TouchableOpacity>
         </View>
       </AnimatedSection>
 
-      {/* Modals */}
-      <Modal visible={historyModalVisible} animationType="slide" transparent>
+      {/* OCR / ACR / NLP Section */}
+      <AnimatedSection>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>OCR / ACR / NLP</Text>
+
+          <View style={{ marginBottom: 8 }}>
+            <TouchableOpacity style={styles.button} onPress={pickProcessingFile}>
+              <Text style={styles.buttonText}>Choose File for OCR/ACR</Text>
+            </TouchableOpacity>
+            {processingFile?.fileName ? (
+              <Text style={{ marginTop: 8, color: '#555' }}>Selected: {processingFile.fileName}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.row}>
+            <TouchableOpacity style={[styles.button, styles.flex]} onPress={handleRunOCR}>
+              <Text style={styles.buttonText}>Run OCR</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.button, styles.flex]} onPress={handleRunACR}>
+              <Text style={styles.buttonText}>Run ACR</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ marginTop: 12 }}>
+            <Text style={styles.textItem}>NLP Input (use extracted OCR text or paste your own):</Text>
+            <TextInput
+              style={[styles.textInput, { height: 120 }]}
+              multiline
+              value={nlpInput}
+              onChangeText={setNlpInput}
+              placeholder="Paste text or use OCR result..."
+            />
+            <TouchableOpacity style={styles.button} onPress={handleRunNLP}>
+              <Text style={styles.buttonText}>Run NLP</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ marginTop: 8 }}>
+            {processing ? <Text style={{ color: '#666' }}>Processing...</Text> : null}
+
+            {ocrResult ? (
+              <View style={[styles.card, { marginTop: 10 }]}>
+                <Text style={styles.sectionTitle}>OCR Result</Text>
+                <Text style={{ color: '#555' }}>{typeof ocrResult === 'string' ? ocrResult : (ocrResult?.text ?? JSON.stringify(ocrResult, null, 2))}</Text>
+              </View>
+            ) : null}
+
+            {acrResult ? (
+              <View style={[styles.card, { marginTop: 10 }]}>
+                <Text style={styles.sectionTitle}>ACR Result</Text>
+                {/* Display medication list nicely */}
+                {Array.isArray(acrResult?.found) && acrResult.found.length > 0 ? (
+                  acrResult.found.map((m: any, i: number) => (
+                    <View key={i} style={{ marginBottom: 6 }}>
+                      <Text style={{ color: '#333', fontWeight: '700' }}>{m.medication}</Text>
+                      <Text style={{ color: '#555' }}>{m.dosage}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={{ color: '#555' }}>No medications found</Text>
+                )}
+              </View>
+            ) : null}
+
+            {nlpResult ? (
+              <View style={[styles.card, { marginTop: 10 }]}>
+                <Text style={styles.sectionTitle}>NLP Result</Text>
+                <Text style={{ color: '#555' }}>{JSON.stringify(nlpResult, null, 2)}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </AnimatedSection>
+
+      {/* ===== Medical History Modal ===== */}
+      <Modal visible={historyModalVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.sectionTitle}>Edit Medical History</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Diagnoses (comma separated)"
-              value={editHistory.diagnoses.join(', ')}
-              onChangeText={(text) =>
-                setEditHistory({ ...editHistory, diagnoses: text.split(',').map((t) => t.trim()) })
-              }
-            />
-            <TextInput
-              style={styles.textInput}
-              placeholder="Surgeries (comma separated)"
-              value={editHistory.surgeries.join(', ')}
-              onChangeText={(text) =>
-                setEditHistory({ ...editHistory, surgeries: text.split(',').map((t) => t.trim()) })
-              }
-            />
-            <TextInput
-              style={styles.textInput}
-              placeholder="Allergies (comma separated)"
-              value={editHistory.allergies.join(', ')}
-              onChangeText={(text) =>
-                setEditHistory({ ...editHistory, allergies: text.split(',').map((t) => t.trim()) })
-              }
-            />
-            <TextInput
-              style={styles.textInput}
-              placeholder="Chronic Conditions (comma separated)"
-              value={editHistory.chronicConditions.join(', ')}
-              onChangeText={(text) =>
-                setEditHistory({ ...editHistory, chronicConditions: text.split(',').map((t) => t.trim()) })
-              }
-            />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-              <TouchableOpacity style={[styles.button, { flex: 0.45 }]} onPress={handleSaveHistory}>
+
+            {(['diagnoses', 'surgeries', 'allergies', 'chronicConditions'] as const).map(
+              (field) => (
+                <TextInput
+                  key={field}
+                  style={styles.textInput}
+                  placeholder={field}
+                  value={editHistory[field].join(', ')}
+                  onChangeText={(text) =>
+                    setEditHistory({
+                      ...editHistory,
+                      [field]: text.split(',').map((t) => t.trim()),
+                    })
+                  }
+                />
+              )
+            )}
+
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={[styles.button, styles.flex]}
+                onPress={handleSaveHistory}
+              >
                 <Text style={styles.buttonText}>Save</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.button, { flex: 0.45, backgroundColor: '#f44336' }]}
+                style={[styles.button, styles.cancel]}
                 onPress={() => setHistoryModalVisible(false)}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
@@ -281,34 +510,32 @@ const Doctor_Emr = () => {
         </View>
       </Modal>
 
-      <Modal visible={labModalVisible} animationType="slide" transparent>
+      {/* ===== Lab Upload Modal ===== */}
+      <Modal visible={labModalVisible} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.sectionTitle}>Add Lab Result</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Test"
-              value={newLab.test}
-              onChangeText={(text) => setNewLab({ ...newLab, test: text })}
-            />
-            <TextInput
-              style={styles.textInput}
-              placeholder="Result"
-              value={newLab.result}
-              onChangeText={(text) => setNewLab({ ...newLab, result: text })}
-            />
-            <TextInput
-              style={styles.textInput}
-              placeholder="Date (YYYY-MM-DD)"
-              value={newLab.date}
-              onChangeText={(text) => setNewLab({ ...newLab, date: text })}
-            />
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-              <TouchableOpacity style={[styles.button, { flex: 0.45 }]} onPress={handleSaveLabResult}>
+            <Text style={styles.sectionTitle}>Upload Lab Result</Text>
+
+            <TouchableOpacity style={styles.button} onPress={pickLabFile}>
+              <Text style={styles.buttonText}>Choose File</Text>
+            </TouchableOpacity>
+
+            {newLab.fileName ? (
+              <Text style={{ marginTop: 10, color: '#555' }}>
+                Selected: {newLab.fileName}
+              </Text>
+            ) : null}
+
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={[styles.button, styles.flex]}
+                onPress={handleSaveLabResult}
+              >
                 <Text style={styles.buttonText}>Save</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.button, { flex: 0.45, backgroundColor: '#f44336' }]}
+                style={[styles.button, styles.cancel]}
                 onPress={() => setLabModalVisible(false)}
               >
                 <Text style={styles.buttonText}>Cancel</Text>
@@ -323,21 +550,30 @@ const Doctor_Emr = () => {
 
 export default Doctor_Emr;
 
+// ================= Styles =================
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f4f6fb', padding: 10 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f4f6fb',
+    padding: 10,
+  },
   section: {
     marginBottom: 20,
     backgroundColor: '#fff',
     padding: 20,
     borderRadius: 15,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
     elevation: 5,
   },
-  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 15, color: '#333' },
-  textItem: { fontSize: 16, marginBottom: 5, color: '#555' },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 15,
+  },
+  textItem: {
+    fontSize: 16,
+    marginBottom: 5,
+    color: '#555',
+  },
   button: {
     marginTop: 15,
     backgroundColor: '#4e91fc',
@@ -345,7 +581,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+  },
   card: {
     padding: 15,
     backgroundColor: '#f0f3ff',
@@ -372,5 +612,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 20,
     borderRadius: 15,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  flex: {
+    flex: 0.45,
+  },
+  cancel: {
+    flex: 0.45,
+    backgroundColor: '#f44336',
   },
 });
