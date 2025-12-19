@@ -34,3 +34,8 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = "__all__"
+
+class MedicalRecordSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MedicalRecord
+        fields = "__all__"

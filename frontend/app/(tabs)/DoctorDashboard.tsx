@@ -10,6 +10,9 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { getAppointments } from '@/src/api/appointments';
+import { getPatients } from '@/src/api/patients';
+import { getUser } from '@/src/utils/session';
 
 const WINDOW_WIDTH = Dimensions.get('window').width;
 const SIDEBAR_WIDTH = 260;
@@ -43,6 +46,7 @@ const SCHEDULE = [
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: '🏠', path: '/DoctorDashboard' },
+  { label: 'Profile', icon: '👤', path: '/doctor_Profile' },
   { label: 'Appointments', icon: '🗓️', path: '/DentistAppointments' },
   { label: 'My Patients', icon: '🧍‍♂️', path: '/MyPatients' },
   { label: 'EMR', icon: '🗂️', path: '/Doctor_Emr' },
@@ -62,8 +66,64 @@ export default function DoctorDashboard() {
   const sidebarX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const contentAnim = useRef(new Animated.Value(0)).current;
 
+  // dentist data
+  const [dentist, setDentist] = useState<any | null>(null);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [patientsMap, setPatientsMap] = useState<Record<number, string>>({});
+  const [stats, setStats] = useState([
+    { id: 1, title: "Today's Appointments", value: '0', change: '', icon: '🗓️' },
+    { id: 2, title: 'Total Patients', value: '0', change: '', icon: '👥' },
+    { id: 3, title: 'Pending EMRs', value: '0', change: '', icon: '🩺' },
+  ]);
+  const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
+
   useEffect(() => {
     Animated.timing(contentAnim, { toValue: 1, duration: 520, useNativeDriver: true }).start();
+
+    // load session dentist, appointments, and compute stats/schedule
+    (async () => {
+      try {
+        const s = await (await import('@/src/utils/session')).getUser();
+        if (!s || s.role !== 'dentist') return;
+
+        let d: any = null;
+        if (s.dentist) d = s.dentist;
+        else if (s.id) d = await (await import('@/src/api/dentists')).getDentist(s.id);
+        setDentist(d);
+
+        // load appointments and patients
+        const allAppts = await getAppointments();
+        const myAppts = allAppts.filter((a: any) => Number(a.dentist) === Number(s.id));
+
+        const patients = await getPatients();
+        const map: Record<number, string> = {};
+        for (const p of patients) map[p.id] = `${p.first_name} ${p.last_name}`;
+
+        setPatientsMap(map);
+        setAppointments(myAppts);
+
+        // stats
+        const totalAppointments = myAppts.length;
+        const uniquePatients = new Set(myAppts.map((a: any) => Number(a.patient))).size;
+        const pendingEmrs = myAppts.filter((a: any) => String(a.status).toLowerCase() !== 'completed').length;
+
+        setStats([
+          { id: 1, title: "Today's Appointments", value: String(myAppts.filter((a: any) => a.appointment_date === new Date().toISOString().slice(0,10)).length), change: '', icon: '🗓️' },
+          { id: 2, title: 'Total Patients', value: String(uniquePatients), change: '', icon: '👥' },
+          { id: 3, title: 'Pending EMRs', value: String(pendingEmrs), change: '', icon: '🩺' },
+        ]);
+
+        // today's schedule sorted by time
+        const today = new Date().toISOString().slice(0,10);
+        const todayAppts = myAppts.filter((a: any) => a.appointment_date === today)
+          .sort((x: any, y: any) => (x.appointment_time || '').localeCompare(y.appointment_time || ''))
+          .map((a: any) => ({ ...a, patient_name: map[a.patient] || 'Unknown' }));
+
+        setTodaySchedule(todayAppts);
+      } catch (e) {
+        console.log('doctor dashboard load err', e);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -101,7 +161,7 @@ export default function DoctorDashboard() {
             {NAV_ITEMS.map((item) => (
               <TouchableOpacity
                 key={item.path}
-                onPress={() => handleNavigation(item.path)}
+                onPress={() => handleNavigation(item.path as any )}
                 style={styles.sideNavItem}
               >
                 <Text style={styles.sideNavIcon}>{item.icon}</Text>
@@ -127,8 +187,8 @@ export default function DoctorDashboard() {
           </TouchableOpacity>
 
           <View style={styles.profileBox}>
-            <Text style={styles.profileName}>Dr. Ahmed Hassan</Text>
-            <Text style={styles.profileRole}>Dentist</Text>
+            <Text style={styles.profileName}>{dentist ? `Dr. ${dentist.first_name} ${dentist.last_name}` : 'Dr. Ahmed Hassan'}</Text>
+            <Text style={styles.profileRole}>{dentist ? dentist.specialty || 'Dentist' : 'Dentist'}</Text>
           </View>
         </View>
 
@@ -138,7 +198,7 @@ export default function DoctorDashboard() {
 
         {/* Stats Cards */}
         <View style={styles.cardsRow}>
-          {STATS.map((item) => (
+          {stats.map((item) => (
             <View key={item.id} style={styles.card}>
               <Text style={styles.cardIcon}>{item.icon}</Text>
               <Text style={styles.cardTitle}>{item.title}</Text>
@@ -150,15 +210,16 @@ export default function DoctorDashboard() {
 
         {/* Schedule Section */}
         <View style={styles.largeCard}>
-          <Text style={styles.sectionTitle}>Today's Schedule - Oct 29</Text>
-          {SCHEDULE.map((item) => (
+          <Text style={styles.sectionTitle}>Today's Schedule</Text>
+          {todaySchedule.length === 0 && <Text style={{ color: '#64748b' }}>No appointments for today.</Text>}
+          {todaySchedule.map((item) => (
             <View key={item.id} style={styles.scheduleRow}>
               <View style={styles.timeBadge}>
-                <Text style={styles.timeText}>{item.time}</Text>
+                <Text style={styles.timeText}>{item.appointment_time}</Text>
               </View>
               <View>
-                <Text style={styles.scheduleName}>{item.name}</Text>
-                <Text style={styles.scheduleDetail}>{item.detail}</Text>
+                <Text style={styles.scheduleName}>{item.patient_name}</Text>
+                <Text style={styles.scheduleDetail}>{item.notes || ''}</Text>
               </View>
             </View>
           ))}

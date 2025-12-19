@@ -1,8 +1,12 @@
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
+import { login } from '@/src/api/auth';
+import { getPatient } from '@/src/api/patients';
+import { getDentist } from '@/src/api/dentists';
+import { setUser } from '@/src/utils/session';
 import {
   Animated,
   Easing,
@@ -54,9 +58,31 @@ export default function LoginScreen() {
     ).start();
   }, []);
 
-  const handleLogin = () => {
-    alert(`Email: ${email}\nPassword: ${password}`);
-  };
+  const router = useRouter();
+
+  const handleLogin = async () => {
+    try {
+      const res = await login({ email, password });
+
+      if (res.role === 'patient') {
+        const patient = await getPatient(res.id);
+        setUser({ role: 'patient', id: res.id, patient });
+        router.push('/PatientDashboard');
+        return;
+      }
+
+      if (res.role === 'dentist') {
+        const dentist = await getDentist(res.id);
+        setUser({ role: 'dentist', id: res.id, dentist });
+        router.push('/DoctorDashboard');
+        return;
+      }
+
+      alert('Login successful');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Login failed');
+    }
+  }; 
 
   return (
     <ThemedView style={styles.container}>

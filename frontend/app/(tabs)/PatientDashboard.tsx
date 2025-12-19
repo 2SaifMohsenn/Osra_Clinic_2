@@ -79,11 +79,31 @@ export default function PatientDashboard() {
   const sidebarX = useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
 
+  // Patient data state
+  const [patient, setPatient] = useState<any | null>(null);
+
   // Entrance animations for content
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const contentTranslateY = useRef(new Animated.Value(12)).current;
 
   useEffect(() => {
+    // Try to load current user and patient data
+    (async () => {
+      try {
+        const session = (await import('@/src/utils/session')).getUser();
+        if (session && session.role === 'patient') {
+          if (session.patient) {
+            setPatient(session.patient);
+          } else if (session.id) {
+            const p = await (await import('@/src/api/patients')).getPatient(session.id);
+            setPatient(p);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+
     // entrance animation for the page content
     Animated.parallel([
       Animated.timing(contentOpacity, { toValue: 1, duration: 420, useNativeDriver: true }),
@@ -101,6 +121,11 @@ export default function PatientDashboard() {
 
   const toggleSidebar = () => setOpen((v) => !v);
   const closeSidebar = () => setOpen(false);
+
+  const initials = patient ? `${(patient.first_name||'').charAt(0)}${(patient.last_name||'').charAt(0)}`.toUpperCase() : 'JD';
+  const fullName = patient ? `${patient.first_name} ${patient.last_name}` : 'Jane Doe';
+  const email = patient ? patient.email : 'jane@example.com';
+  const address = patient ? patient.address : '123 Street, City';
 
   return (
     <View style={styles.container}>
@@ -121,7 +146,7 @@ export default function PatientDashboard() {
         <Text style={styles.headerTitle}>Patient Dashboard</Text>
 
         <TouchableOpacity onPress={() => router.push('/profile')} style={styles.profileBtn}>
-          <Text style={styles.profileInitials}>JD</Text>
+          <Text style={styles.profileInitials}>{initials}</Text>
         </TouchableOpacity>
       </View>
 
@@ -132,8 +157,8 @@ export default function PatientDashboard() {
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={{ opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }}>
-          <Text style={styles.welcomeTitle}>Welcome back, Jane Doe!</Text>
-          <Text style={styles.subText}>Here's a summary of your account.</Text>
+          <Text style={styles.welcomeTitle}>Welcome back, {fullName}!</Text>
+          <Text style={styles.subText}>{email}</Text>
 
           {/* Two-column layout for the two cards */}
           <View style={styles.twoColRow}>
@@ -170,9 +195,9 @@ export default function PatientDashboard() {
           <Animated.View style={[styles.upNextCard, { marginTop: 18 }]}>
             <Text style={styles.upNextTitle}>Up Next</Text>
             <View style={styles.upNextContent}>
-              <View style={styles.avatarBox}><Text style={styles.avatarText}>JD</Text></View>
+              <View style={styles.avatarBox}><Text style={styles.avatarText}>{initials}</Text></View>
               <View style={{ flex: 1, paddingLeft: 12 }}>
-                <Text style={styles.upNextName}>John Doe</Text>
+                <Text style={styles.upNextName}>{fullName}</Text>
                 <Text style={styles.upNextSub}>9:00 AM · Annual Checkup</Text>
                 <Text style={styles.noteTitle}>Notes</Text>
                 <Text style={styles.noteBody}>

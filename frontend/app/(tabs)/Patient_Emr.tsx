@@ -1,5 +1,5 @@
 // Patient_Emr.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -8,6 +8,9 @@ import {
   FlatList,
   TouchableOpacity,
 } from 'react-native';
+import { getMedicalRecords } from '../../src/api/medicalRecords';
+import { getUser } from '../../src/utils/session';
+import { getPatient } from '../../src/api/patients';
 
 interface PatientInfo {
   name: string;
@@ -39,37 +42,40 @@ interface Appointment {
 }
 
 const Patient_Emr = () => {
-  // Dummy data
-  const [patient] = useState<PatientInfo>({
-    name: 'John Doe',
-    age: 35,
-    gender: 'Male',
-    contact: '123-456-7890',
-  });
+  const [patient, setPatient] = useState<PatientInfo | null>(null);
+  const [medicalSummary, setMedicalSummary] = useState<any>({ diagnoses: [], allergies: [], chronicConditions: [] });
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [labResults, setLabResults] = useState<LabResult[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [doctorNotes, setDoctorNotes] = useState<string[]>([]);
 
-  const [medicalSummary] = useState({
-    diagnoses: ['Hypertension'],
-    allergies: ['Penicillin'],
-    chronicConditions: ['Diabetes'],
-  });
+  useEffect(() => {
+    const load = async () => {
+      const session = getUser();
+      if (!session || session.role !== 'patient') return;
+      try {
+        const p = await getPatient(session.id);
+        setPatient({ name: `${p.first_name} ${p.last_name}`, age: 0, gender: p.gender, contact: p.phone });
+        const recs = await getMedicalRecords({ patient: session.id });
+        if (Array.isArray(recs) && recs.length > 0) {
+          const r = recs[0];
+          // Simple parsing of fields
+          setMedicalSummary({ diagnoses: r.diagnosis ? [r.diagnosis] : [], allergies: [], chronicConditions: [] });
+          setDoctorNotes([r.treatment_notes || '']);
+          // parse prescribed_drugs into list if it is comma-separated
+          if (r.prescribed_drugs) {
+            setPrescriptions([
+              { id: '1', medicine: r.prescribed_drugs, dosage: '', startDate: '', endDate: '' },
+            ]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load patient or medical records', err);
+      }
+    };
 
-  const [prescriptions] = useState<Prescription[]>([
-    { id: '1', medicine: 'Metformin', dosage: '500mg', startDate: '2025-12-01', endDate: '2025-12-30' },
-  ]);
-
-  const [labResults] = useState<LabResult[]>([
-    { id: '1', test: 'Blood Sugar', result: '110 mg/dL', date: '2025-12-10' },
-  ]);
-
-  const [appointments] = useState<Appointment[]>([
-    { id: '1', date: '2025-12-12', doctor: 'Dr. Smith', status: 'Completed' },
-    { id: '2', date: '2025-12-20', doctor: 'Dr. Lee', status: 'Upcoming' },
-  ]);
-
-  const [doctorNotes] = useState<string[]>([
-    'Take medication after meals.',
-    'Monitor blood sugar daily.',
-  ]);
+    load();
+  }, []);
 
   const handleDownloadEMR = () => {
     // Implement download functionality here
@@ -86,10 +92,16 @@ const Patient_Emr = () => {
       {/* Personal Info */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Personal Information</Text>
-        <Text>Name: {patient.name}</Text>
-        <Text>Age: {patient.age}</Text>
-        <Text>Gender: {patient.gender}</Text>
-        <Text>Contact: {patient.contact}</Text>
+        {patient ? (
+          <>
+            <Text>Name: {patient.name}</Text>
+            <Text>Age: {patient.age}</Text>
+            <Text>Gender: {patient.gender}</Text>
+            <Text>Contact: {patient.contact}</Text>
+          </>
+        ) : (
+          <Text style={{ color: '#666' }}>No patient loaded. If you're a patient, ensure you are logged in. Otherwise choose a patient from your doctor's list.</Text>
+        )}
       </View>
 
       {/* Medical Summary */}

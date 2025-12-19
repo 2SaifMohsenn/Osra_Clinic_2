@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Dimensions,
     ScrollView,
@@ -9,6 +9,11 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
+
+import { getDentists } from '@/src/api/dentists';
+import { createAppointment } from '@/src/api/appointments';
+import { getUser } from '@/src/utils/session';
 
 const logo = require('@/assets/images/logo_osra.png');
 const PRIMARY = '#0EA5E9';
@@ -24,12 +29,6 @@ const CARD_SHADOW = {
 };
 const WINDOW_WIDTH = Dimensions.get('window').width;
 
-const DENTISTS = [
-  { id: 'd1', name: 'Dr. Sarah Ahmed', specialty: 'Orthodontist' },
-  { id: 'd2', name: 'Dr. John Smith', specialty: 'Pediatric Dentist' },
-  { id: 'd3', name: 'Dr. Amira Nabil', specialty: 'Endodontist' },
-];
-
 const SERVICES = [
   'Teeth Cleaning',
   'Cavity Filling',
@@ -38,16 +37,77 @@ const SERVICES = [
   'Dental Implants',
 ];
 
+function to24Hour(timeStr: string) {
+  // e.g. "9:00 AM" => "09:00"
+  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!m) return timeStr;
+  let h = parseInt(m[1], 10);
+  const mm = m[2];
+  const ampm = m[3].toUpperCase();
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${h.toString().padStart(2, '0')}:${mm}`;
+}
+
 const TIMESLOTS = [
   '9:00 AM', '10:00 AM', '11:00 AM',
   '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM',
 ];
 
-export default function BookAppointment() {
-  const [selectedDentist, setSelectedDentist] = useState<string | null>(null);
+export default function BookAppointment({ navigation }: any) {
+  const [dentists, setDentists] = useState<any[]>([]);
+  const [selectedDentist, setSelectedDentist] = useState<number | null>(null);
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const router = useRouter();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await getDentists();
+        setDentists(list);
+      } catch (e) {
+        console.log('failed to load dentists', e);
+      }
+    })();
+  }, []);
+
+  const handleConfirm = async () => {
+    if (!selectedDentist) return alert('Please select a dentist');
+    if (!selectedService) return alert('Please select a service');
+    if (!selectedDate) return alert('Please enter a date (YYYY-MM-DD)');
+    if (!selectedTime) return alert('Please select a time');
+
+    const session = getUser();
+    if (!session || session.role !== 'patient') return alert('You must be logged in as a patient');
+
+    const patientId = session.id;
+    const appointment_time = to24Hour(selectedTime!);
+
+    setLoading(true);
+    try {
+      await createAppointment({
+        patient: patientId,
+        dentist: selectedDentist,
+        appointment_date: selectedDate,
+        appointment_time,
+        status: 'upcoming',
+        notes: selectedService,
+      });
+
+      alert('Appointment created');
+      // go to my appointments
+      router.push('/my-appointment');
+    } catch (e) {
+      console.log('create appointment err', e);
+      alert('Failed to create appointment');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.content}>
@@ -68,7 +128,7 @@ export default function BookAppointment() {
       {/* Dentist Selection */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Select Dentist</Text>
-        {DENTISTS.map((d) => (
+        {dentists.map((d) => (
           <TouchableOpacity
             key={d.id}
             style={[
@@ -77,7 +137,7 @@ export default function BookAppointment() {
             ]}
             onPress={() => setSelectedDentist(d.id)}
           >
-            <Text style={styles.optionTitle}>{d.name}</Text>
+            <Text style={styles.optionTitle}>{`Dr. ${d.first_name} ${d.last_name}`}</Text>
             <Text style={styles.optionSub}>{d.specialty}</Text>
           </TouchableOpacity>
         ))}
@@ -136,8 +196,8 @@ export default function BookAppointment() {
       </View>
 
       {/* Confirm Button */}
-      <TouchableOpacity style={styles.primaryBtn}>
-        <Text style={styles.primaryBtnText}>Confirm Appointment</Text>
+      <TouchableOpacity style={[styles.primaryBtn, loading && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading}>
+        <Text style={styles.primaryBtnText}>{loading ? 'Booking…' : 'Confirm Appointment'}</Text>
       </TouchableOpacity>
 
       <View style={{ height: 30 }} />

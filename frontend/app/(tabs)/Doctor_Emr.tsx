@@ -11,21 +11,16 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { processOCR, processACR, processNLP } from '../../services';
+import { getPatient } from '../../src/api/patients';
+import { getMedicalRecords, createMedicalRecord, updateMedicalRecord } from '../../src/api/medicalRecords';
+import { getAppointments } from '../../src/api/appointments';
+import { getPatients } from '../../src/api/patients';
+import { getUser } from '../../src/utils/session';
 
 // ================= Navigation Types =================
-type RootStackParamList = {
-  Doctor_Emr: undefined;
-  Prescription: undefined;
-};
-
-type DoctorEmrNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'Doctor_Emr'
->;
 
 // ================= Interfaces =================
 interface PatientInfo {
@@ -60,33 +55,31 @@ interface MedicalHistory {
 
 // ================= Component =================
 const Doctor_Emr = () => {
-  const navigation = useNavigation<DoctorEmrNavigationProp>();
-
+  const router = useRouter();
+  const params: any = useLocalSearchParams();
   // ================= States =================
-  const [patient] = useState<PatientInfo>({
-    name: 'John Doe',
-    age: 35,
-    gender: 'Male',
-    contact: '123-456-7890',
-    patientId: 'P-00123',
-  });
+  const routePatientId = params?.patientId ? Number(params.patientId) : null;
 
+  const [patient, setPatient] = useState<any | null>(null);
+  const [medicalRecord, setMedicalRecord] = useState<any | null>(null);
+  const [diagnosis, setDiagnosis] = useState<string>('');
+  const [prescribedDrugs, setPrescribedDrugs] = useState<string>('');
+  const [treatmentNotes, setTreatmentNotes] = useState<string>('');
+
+  // Patient selection for doctors
+  const [availablePatients, setAvailablePatients] = useState<any[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<number | null>(routePatientId ?? null);
+  const [loadingPatients, setLoadingPatients] = useState(false);
+
+  // keep legacy local UI states
   const [medicalHistory, setMedicalHistory] = useState<MedicalHistory>({
-    diagnoses: ['Hypertension'],
-    surgeries: ['Appendectomy'],
-    allergies: ['Penicillin'],
-    chronicConditions: ['Diabetes'],
+    diagnoses: [],
+    surgeries: [],
+    allergies: [],
+    chronicConditions: [],
   });
 
-  const [prescriptions] = useState<Prescription[]>([
-    {
-      id: '1',
-      medicine: 'Metformin',
-      dosage: '500mg',
-      duration: '30 days',
-      notes: 'Take after meals',
-    },
-  ]);
+  const [prescriptions] = useState<Prescription[]>([]);
 
   const [labResults, setLabResults] = useState<LabResult[]>([]);
 
@@ -126,9 +119,61 @@ const Doctor_Emr = () => {
     }).start();
   }, []);
 
+  // Fetch patient and their medical record when selectedPatientId changes
+  useEffect(() => {
+    const load = async () => {
+      if (!selectedPatientId) return;
+      try {
+        const p = await getPatient(Number(selectedPatientId));
+        setPatient(p);
+        // fetch medical records for this patient (latest first)
+        const recs = await getMedicalRecords({ patient: Number(selectedPatientId) });
+        if (Array.isArray(recs) && recs.length > 0) {
+          const r = recs[0];
+          setMedicalRecord(r);
+          setDiagnosis(r.diagnosis || '');
+          setPrescribedDrugs(r.prescribed_drugs || '');
+          setTreatmentNotes(r.treatment_notes || '');
+        } else {
+          setMedicalRecord(null);
+          setDiagnosis('');
+          setPrescribedDrugs('');
+          setTreatmentNotes('');
+        }
+      } catch (err) {
+        console.warn('Failed to load patient or records', err);
+      }
+    };
+
+    load();
+  }, [selectedPatientId]);
+
+  // If logged in as dentist, fetch their patients (appointments -> unique patients)
+  useEffect(() => {
+    const loadPatients = async () => {
+      try {
+        const session = getUser();
+        if (!session || session.role !== 'dentist') return;
+        setLoadingPatients(true);
+        const appts = await (await import('../../src/api/appointments')).getAppointments();
+        const myAppts = appts.filter((a: any) => a.dentist === session.id);
+        const patientIds = Array.from(new Set(myAppts.map((a: any) => a.patient)));
+        const allPatients = await (await import('../../src/api/patients')).getPatients();
+        const myPatients = allPatients.filter((p: any) => patientIds.includes(p.id));
+        setAvailablePatients(myPatients);
+      } catch (err) {
+        console.warn('Failed to load available patients', err);
+      } finally {
+        setLoadingPatients(false);
+      }
+    };
+
+    loadPatients();
+  }, []);
+
   // ================= Handlers =================
   const handleAddPrescription = () => {
-    navigation.navigate('Prescription');
+    router.push('/Prescription');
   };
 
   const handleSaveHistory = () => {
@@ -139,6 +184,37 @@ const Doctor_Emr = () => {
   const handleSaveNotes = () => {
     console.log('Doctor Notes:', doctorNotes);
     alert('Doctor notes saved successfully');
+  };
+
+  const handleSaveRecord = async () => {
+    if (!patient) {
+      alert('Please select a patient to save the record for');
+      return;
+    }
+    try {
+      if (medicalRecord && medicalRecord.id) {
+        const updated = await updateMedicalRecord(medicalRecord.id, {
+          diagnosis,
+          prescribed_drugs: prescribedDrugs,
+          treatment_notes: treatmentNotes,
+          patient: patient.id,
+        });
+        setMedicalRecord(updated);
+        alert('Medical record updated');
+      } else {
+        const created = await createMedicalRecord({
+          patient: patient.id,
+          diagnosis,
+          prescribed_drugs: prescribedDrugs,
+          treatment_notes: treatmentNotes,
+        });
+        setMedicalRecord(created);
+        alert('Medical record created');
+      }
+    } catch (err) {
+      console.warn('Failed to save medical record', err);
+      alert('Failed to save medical record');
+    }
   };
 
   // ================= File Picker =================
@@ -279,15 +355,35 @@ const Doctor_Emr = () => {
   // ================= UI =================
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Patient Selector (when dentist hasn't navigated with a patient) */}
+      {!selectedPatientId ? (
+        <AnimatedSection>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Select Patient to edit EMR</Text>
+            {loadingPatients ? (
+              <Text style={{ color: '#666' }}>Loading patients...</Text>
+            ) : availablePatients.length === 0 ? (
+              <Text style={{ color: '#666' }}>No patients found for your account.</Text>
+            ) : (
+              availablePatients.map((p) => (
+                <TouchableOpacity key={p.id} style={{ paddingVertical: 10 }} onPress={() => setSelectedPatientId(p.id)}>
+                  <Text style={{ fontWeight: '700' }}>{p.first_name} {p.last_name}</Text>
+                  <Text style={{ color: '#666' }}>{p.email ?? p.phone}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        </AnimatedSection>
+      ) : null}
+
       {/* Patient Info */}
       <AnimatedSection>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Patient Information</Text>
-          <Text style={styles.textItem}>Name: {patient.name}</Text>
-          <Text style={styles.textItem}>Age: {patient.age}</Text>
-          <Text style={styles.textItem}>Gender: {patient.gender}</Text>
-          <Text style={styles.textItem}>Contact: {patient.contact}</Text>
-          <Text style={styles.textItem}>Patient ID: {patient.patientId}</Text>
+          <Text style={styles.textItem}>Name: {patient ? `${patient.first_name || ''} ${patient.last_name || ''}` : '—'}</Text>
+          <Text style={styles.textItem}>Gender: {patient?.gender ?? '—'}</Text>
+          <Text style={styles.textItem}>Contact: {patient?.phone ?? patient?.contact ?? '—'}</Text>
+          <Text style={styles.textItem}>Patient ID: {patient?.id ?? '—'}</Text>
         </View>
       </AnimatedSection>
 
@@ -314,6 +410,47 @@ const Doctor_Emr = () => {
             onPress={() => setHistoryModalVisible(true)}
           >
             <Text style={styles.buttonText}>Update Medical History</Text>
+          </TouchableOpacity>
+        </View>
+      </AnimatedSection>
+
+      {/* Medical Record Editor */}
+      <AnimatedSection>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Medical Record</Text>
+          {medicalRecord && medicalRecord.record_date ? (
+            <Text style={{ color: '#666', marginBottom: 8 }}>Last: {new Date(medicalRecord.record_date).toLocaleString()}</Text>
+          ) : null}
+
+          <Text style={styles.textItem}>Diagnosis</Text>
+          <TextInput
+            style={[styles.textInput, { height: 100 }]}
+            multiline
+            value={diagnosis}
+            onChangeText={setDiagnosis}
+            placeholder="Enter diagnosis..."
+          />
+
+          <Text style={styles.textItem}>Prescribed Drugs</Text>
+          <TextInput
+            style={[styles.textInput, { height: 80 }]}
+            multiline
+            value={prescribedDrugs}
+            onChangeText={setPrescribedDrugs}
+            placeholder="List prescribed drugs..."
+          />
+
+          <Text style={styles.textItem}>Treatment Notes</Text>
+          <TextInput
+            style={[styles.textInput, { height: 120 }]}
+            multiline
+            value={treatmentNotes}
+            onChangeText={setTreatmentNotes}
+            placeholder="Notes about treatment..."
+          />
+
+          <TouchableOpacity style={styles.button} onPress={handleSaveRecord}>
+            <Text style={styles.buttonText}>{medicalRecord ? 'Update Record' : 'Create Record'}</Text>
           </TouchableOpacity>
         </View>
       </AnimatedSection>

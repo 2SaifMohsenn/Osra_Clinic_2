@@ -8,6 +8,11 @@ from rest_framework import status
 from .models import *
 from .serializers import *
 
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+
 class PatientViewSet(ModelViewSet):
     queryset = Patient.objects.all()
     serializer_class = PatientSerializer
@@ -35,6 +40,20 @@ class InvoiceViewSet(ModelViewSet):
 class PaymentViewSet(ModelViewSet):
     queryset = Payment.objects.all()
     serializer_class = PaymentSerializer
+
+class MedicalRecordViewSet(ModelViewSet):
+    queryset = MedicalRecord.objects.all().order_by('-record_date')
+    serializer_class = MedicalRecordSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        patient = self.request.query_params.get('patient')
+        dentist = self.request.query_params.get('dentist')
+        if patient:
+            qs = qs.filter(patient_id=patient)
+        if dentist:
+            qs = qs.filter(appointment__dentist_id=dentist)
+        return qs
 
 
 @api_view(['POST'])
@@ -144,3 +163,117 @@ def nlp_process_view(request):
     summary = ' '.join(words[:30])
     return Response({'original': text, 'word_count': word_count, 'summary': summary})
 
+
+
+
+@api_view(["POST"])
+def patient_signup(request):
+    data = request.data
+
+    patient = Patient.objects.create(
+        first_name=data.get("first_name"),
+        last_name=data.get("last_name"),
+        phone=data.get("phone"),
+        email=data.get("email"),
+        password=data.get("password"),
+        address=data.get("address"),
+        gender=data.get("gender"),
+        date_of_birth=data.get("date_of_birth"),
+    )
+
+    return Response(
+        {"message": "Patient account created", "id": patient.id},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+def dentist_signup(request):
+    data = request.data
+
+    dentist = Dentist.objects.create(
+        first_name=data.get("first_name"),
+        last_name=data.get("last_name"),
+        phone=data.get("phone"),
+        email=data.get("email"),
+        password=data.get("password"),
+        specialty="General",  # default for now
+    )
+
+    return Response(
+        {"message": "Dentist account created", "id": dentist.id},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+def login_view(request):
+    """Simple login that checks Patient and Dentist models for email/password.
+    Returns the role and id on success, 401 on failure.
+    NOTE: This is a minimal auth for development/testing only.
+    """
+    data = request.data
+    email = data.get("email")
+    password = data.get("password")
+
+    # Try patient first
+    patient = Patient.objects.filter(email=email, password=password).first()
+    if patient:
+        return Response({"role": "patient", "id": patient.id, "first_name": patient.first_name}, status=status.HTTP_200_OK)
+
+    # Try dentist
+    dentist = Dentist.objects.filter(email=email, password=password).first()
+    if dentist:
+        return Response({"role": "dentist", "id": dentist.id, "first_name": dentist.first_name}, status=status.HTTP_200_OK)
+
+    return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+@api_view(["POST"])
+def change_dentist_password(request, pk):
+    """Change password for a dentist. Expects JSON: { current_password, new_password }"""
+    data = request.data
+    current = data.get("current_password")
+    new = data.get("new_password")
+
+    if not current or not new:
+        return Response({"message": "current_password and new_password are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        dentist = Dentist.objects.get(pk=pk)
+    except Dentist.DoesNotExist:
+        return Response({"message": "Dentist not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if dentist.password != current:
+        return Response({"message": "Current password is incorrect"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    dentist.password = new
+    dentist.save()
+
+    return Response({"message": "Password updated"}, status=status.HTTP_200_OK)
+
+
+@api_view(["POST"])
+def change_patient_password(request, pk):
+    """Change password for a patient. Expects JSON: { current_password, new_password }
+    Verifies current_password matches stored password for the patient with id=pk.
+    """
+    data = request.data
+    current = data.get("current_password")
+    new = data.get("new_password")
+
+    if not current or not new:
+        return Response({"message": "current_password and new_password are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        patient = Patient.objects.get(pk=pk)
+    except Patient.DoesNotExist:
+        return Response({"message": "Patient not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if patient.password != current:
+        return Response({"message": "Current password is incorrect"}, status=status.HTTP_401_UNAUTHORIZED)
+
+    patient.password = new
+    patient.save()
+
+    return Response({"message": "Password updated"}, status=status.HTTP_200_OK)
