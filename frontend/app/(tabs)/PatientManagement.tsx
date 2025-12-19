@@ -206,9 +206,10 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from "./theme";
+import API_HOST from '../../services/config';
 
-// Simple local API helpers — replace API_BASE with your backend URL if needed
-const API_BASE = "http://localhost:8000/api";
+// Simple local API helpers — using configured API host
+const API_BASE = `${API_HOST}/api`;
 
 async function getPatients(): Promise<any[]> {
   const res = await fetch(`${API_BASE}/patients/`);

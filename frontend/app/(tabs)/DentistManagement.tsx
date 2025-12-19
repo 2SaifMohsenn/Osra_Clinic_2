@@ -1,35 +1,80 @@
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+import API_HOST from '../../services/config';
 
+// Using backend API to load/create/delete dentists
+const API_BASE = `${API_HOST}/api`;
 
-// Dummy dentist data
-const INITIAL_DENTISTS = [
-  { id: 1, name: 'Dr. Emily Carter', specialty: 'Orthodontist', contact: '+1 234 567 890' },
-  { id: 2, name: 'Dr. James Chen', specialty: 'Pediatric Dentist', contact: '+1 555 222 333' },
-  { id: 3, name: 'Dr. Ava Lee', specialty: 'Endodontist', contact: '+1 999 888 777' },
-];
+async function getDentists(): Promise<any[]> {
+  const res = await fetch(`${API_BASE}/dentists/`);
+  if (!res.ok) throw new Error('Failed to fetch dentists');
+  return res.json();
+}
+
+async function createDentist(data: any): Promise<any> {
+  const res = await fetch(`${API_BASE}/dentists/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to create dentist');
+  return res.json();
+}
+
+async function deleteDentist(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/dentists/${id}/`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete dentist');
+  return;
+}
 
 export default function DentistManagement() {
   const router = useRouter();
-  const [dentists, setDentists] = useState(INITIAL_DENTISTS);
+
+  const [dentists, setDentists] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [newDentist, setNewDentist] = useState({
-    name: '',
+    first_name: '',
+    last_name: '',
     specialty: '',
-    contact: '',
+    phone: '',
+    email: '',
+    password: '',
   });
 
-  const handleAddDentist = () => {
-    if (!newDentist.name || !newDentist.specialty || !newDentist.contact) return;
-    setDentists([...dentists, { id: Date.now(), ...newDentist }]);
-    setNewDentist({ name: '', specialty: '', contact: '' });
-    setShowForm(false);
+  useEffect(() => {
+    loadDentists();
+  }, []);
+
+  const loadDentists = async () => {
+    try {
+      const data = await getDentists();
+      setDentists(data);
+    } catch (error) {
+      console.log('Error loading dentists', error);
+    }
   };
 
-  const handleDelete = (id: number) => {
-    setDentists(dentists.filter((d) => d.id !== id));
+  const handleAddDentist = async () => {
+    if (!newDentist.first_name || !newDentist.last_name || !newDentist.specialty || !newDentist.phone) return;
+    try {
+      await createDentist(newDentist);
+      setNewDentist({ first_name: '', last_name: '', specialty: '', phone: '', email: '', password: '' });
+      setShowForm(false);
+      loadDentists();
+    } catch (error) {
+      console.log('Error adding dentist', error);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteDentist(id);
+      loadDentists();
+    } catch (error) {
+      console.log('Error deleting dentist', error);
+    }
   };
 
   return (
@@ -49,24 +94,50 @@ export default function DentistManagement() {
         {showForm && (
           <View style={styles.formCard}>
             <Text style={styles.sectionTitle}>Add New Dentist</Text>
+
             <TextInput
-              placeholder="Dentist Name"
+              placeholder="First Name"
               style={styles.input}
-              value={newDentist.name}
-              onChangeText={(text) => setNewDentist({ ...newDentist, name: text })}
+              value={newDentist.first_name}
+              onChangeText={(text) => setNewDentist({ ...newDentist, first_name: text })}
             />
+
+            <TextInput
+              placeholder="Last Name"
+              style={styles.input}
+              value={newDentist.last_name}
+              onChangeText={(text) => setNewDentist({ ...newDentist, last_name: text })}
+            />
+
             <TextInput
               placeholder="Specialty"
               style={styles.input}
               value={newDentist.specialty}
               onChangeText={(text) => setNewDentist({ ...newDentist, specialty: text })}
             />
+
             <TextInput
-              placeholder="Contact Info"
+              placeholder="Phone"
               style={styles.input}
-              value={newDentist.contact}
-              onChangeText={(text) => setNewDentist({ ...newDentist, contact: text })}
+              value={newDentist.phone}
+              onChangeText={(text) => setNewDentist({ ...newDentist, phone: text })}
             />
+
+            <TextInput
+              placeholder="Email (optional)"
+              style={styles.input}
+              value={newDentist.email}
+              onChangeText={(text) => setNewDentist({ ...newDentist, email: text })}
+            />
+
+            <TextInput
+              placeholder="Password (optional)"
+              style={styles.input}
+              secureTextEntry
+              value={newDentist.password}
+              onChangeText={(text) => setNewDentist({ ...newDentist, password: text })}
+            />
+
             <TouchableOpacity style={styles.saveButton} onPress={handleAddDentist}>
               <Text style={styles.saveButtonText}>💾 Save Dentist</Text>
             </TouchableOpacity>
@@ -80,20 +151,22 @@ export default function DentistManagement() {
           <View style={[styles.tableRow, styles.tableHeader]}>
             <Text style={[styles.tableCell, styles.headerCell, { flex: 2 }]}>Name</Text>
             <Text style={[styles.tableCell, styles.headerCell]}>Specialty</Text>
-            <Text style={[styles.tableCell, styles.headerCell]}>Contact</Text>
+            <Text style={[styles.tableCell, styles.headerCell]}>Phone</Text>
+            <Text style={[styles.tableCell, styles.headerCell]}>Email</Text>
             <Text style={[styles.tableCell, styles.headerCell]}>Actions</Text>
           </View>
 
           {/* Table Rows */}
           {dentists.map((d) => (
             <View key={d.id} style={styles.tableRow}>
-              <Text style={[styles.tableCell, { flex: 2 }]}>{d.name}</Text>
+              <Text style={[styles.tableCell, { flex: 2 }]}>{d.first_name} {d.last_name}</Text>
               <Text style={styles.tableCell}>{d.specialty}</Text>
-              <Text style={styles.tableCell}>{d.contact}</Text>
+              <Text style={styles.tableCell}>{d.phone}</Text>
+              <Text style={styles.tableCell}>{d.email}</Text>
               <View style={[styles.tableCell, styles.actionsCell]}>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#BFDBFE' }]}
-                  onPress={() => alert(`Assign schedule for ${d.name}`)}
+                  onPress={() => alert(`Assign schedule for ${d.first_name} ${d.last_name}`)}
                 >
                   <Text style={styles.actionText}>Schedule</Text>
                 </TouchableOpacity>

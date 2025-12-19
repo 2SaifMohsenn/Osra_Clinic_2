@@ -6,6 +6,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { useRouter } from 'expo-router';
 
 const PRIMARY = '#0EA5E9';
 const CARD_BG = '#FFFFFF';
@@ -19,17 +20,36 @@ const CARD_SHADOW = {
   elevation: 3,
 };
 
-const APPOINTMENTS = [
-  { id: '1', patient: 'John Doe', time: '9:00 AM', status: 'Upcoming' },
-  { id: '2', patient: 'Sarah Lee', time: '10:30 AM', status: 'In Progress' },
-  { id: '3', patient: 'David Kim', time: '12:00 PM', status: 'Completed' },
-];
-
 export default function DentistAppointments() {
   const [filter, setFilter] = useState('All');
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [patientsMap, setPatientsMap] = useState<Record<number,string>>({});
+  const router = useRouter();
 
-  const filtered = APPOINTMENTS.filter(
-    (a) => filter === 'All' || a.status === filter
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const session = (await import('@/src/utils/session')).getUser();
+        if (!session || session.role !== 'dentist') return;
+
+        const apis = await import('@/src/api/appointments');
+        const all = await apis.getAppointments();
+        const my = all.filter((a: any) => a.dentist === session.id);
+
+        const ps = await (await import('@/src/api/patients')).getPatients();
+        const map: Record<number,string> = {};
+        for (const p of ps) map[p.id] = `${p.first_name} ${p.last_name}`;
+
+        setPatientsMap(map);
+        setAppointments(my);
+      } catch (e) {
+        console.log('load dentist appointments', e);
+      }
+    })();
+  }, []);
+
+  const filtered = appointments.filter(
+    (a) => filter === 'All' || a.status === filter || (filter === 'In Progress' && a.status === 'In Progress'),
   );
 
   return (
@@ -60,21 +80,21 @@ export default function DentistAppointments() {
 
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
           <View style={styles.card}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.patient}</Text>
+              <Text style={styles.name}>{patientsMap[item.patient] || 'Unknown'}</Text>
               <Text style={styles.subText}>
-                {item.time} · {item.status}
+                {item.appointment_time} · {item.status}
               </Text>
             </View>
             <View style={styles.actions}>
               <TouchableOpacity style={styles.primaryBtn}>
                 <Text style={styles.primaryBtnText}>Complete</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.ghostBtn}>
-                <Text style={styles.ghostBtnText}>View</Text>
+              <TouchableOpacity style={styles.ghostBtn} onPress={() => router.push({ pathname: '/Doctor_Emr', params: { patientId: String(item.patient) } })}>
+                <Text style={styles.ghostBtnText}>Open EMR</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.noteBtn}>
                 <Text style={styles.noteBtnText}>Add Notes</Text>

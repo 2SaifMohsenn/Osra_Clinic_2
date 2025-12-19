@@ -1,5 +1,7 @@
+import { signupPatient, signupDentist } from "@/src/api/auth";
+
 import { Image } from 'expo-image';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -32,6 +34,8 @@ export default function SignupScreen() {
     dateOfBirth: '',
     gender: '',
   });
+
+  const router = useRouter();
 
   /* -------------------- ANIMATION -------------------- */
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -75,18 +79,36 @@ export default function SignupScreen() {
     setFormData({ ...formData, [field]: value });
   };
 
-  const handleSignup = () => {
+  const handleSignup = async () => {
     if (!selectedRole) {
       alert('Please select your role');
       return;
     }
 
-    console.log('Signup Data:', {
-      role: selectedRole,
-      ...formData,
-    });
+    try {
+      const payload = {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        phone: formData.phone,
+        email: formData.email,
+        password: formData.password,
+        address: formData.address,
+        gender: formData.gender,
+        date_of_birth: formData.dateOfBirth,
+      };
 
-    alert('Account created successfully!');
+      if (selectedRole === 'Patient') {
+        await signupPatient(payload);
+      } else {
+        await signupDentist(payload);
+      }
+
+      alert('Account created successfully!');
+      router.push('/login');
+    } catch (error) {
+      console.log(error);
+      alert('Signup failed');
+    }
   };
 
   /* -------------------- UI -------------------- */
@@ -112,7 +134,7 @@ export default function SignupScreen() {
 
           {roleOpen && (
             <View style={styles.dropdownMenu}>
-              {['Patient', 'Doctor'].map((role) => (
+              {['Patient', 'Dentist'].map((role) => (
                 <TouchableOpacity
                   key={role}
                   style={styles.dropdownItem}
@@ -301,6 +323,7 @@ export default function SignupScreen() {
     </ScrollView>
   );
 }
+
 
 /* -------------------- STYLES -------------------- */
 const styles = StyleSheet.create({
