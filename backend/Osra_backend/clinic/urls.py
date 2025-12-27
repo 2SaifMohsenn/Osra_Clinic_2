@@ -11,6 +11,7 @@ router.register("treatment-drugs", TreatmentDrugViewSet)
 router.register("invoices", InvoiceViewSet)
 router.register("payments", PaymentViewSet)
 router.register("medicalrecords", MedicalRecordViewSet)
+router.register("admins", AdminViewSet)
 
 urlpatterns = router.urls + [
     # 🔹 Signup APIs
@@ -19,6 +20,7 @@ urlpatterns = router.urls + [
     path("auth/login/", login_view, name="login"),
     path("patients/<int:pk>/change_password/", change_patient_password, name="change-patient-password"),
     path("dentists/<int:pk>/change_password/", change_dentist_password, name="change-dentist-password"),
+    path("admins/<int:pk>/change_password/", change_admin_password, name="change-admin-password"),
 
     # 🔹 Existing processing APIs
     path("process/ocr/", ocr_process_view, name="process-ocr"),

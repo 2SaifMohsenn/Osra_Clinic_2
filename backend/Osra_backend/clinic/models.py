@@ -10,6 +10,11 @@ class Patient(models.Model):
     phone = models.CharField(max_length=20)
     email = models.EmailField(unique=True, null=True, blank=True)
     password = models.CharField(max_length=128, null=True, blank=True)
+    
+    # Medical History (Chronic)
+    diseases = models.TextField(blank=True, default="")
+    allergies = models.TextField(blank=True, default="")
+    medications = models.TextField(blank=True, default="")
 
 
     def __str__(self):
@@ -65,6 +70,8 @@ class MedicalRecord(models.Model):
     diagnosis = models.TextField()
     prescribed_drugs = models.TextField()
     treatment_notes = models.TextField()
+    dental_issues = models.TextField(blank=True, default="")
+    treatment_plan = models.TextField(blank=True, default="")
     record_date = models.DateTimeField(auto_now_add=True)
 
 class AppointmentTreatment(models.Model):
@@ -97,3 +104,11 @@ class Payment(models.Model):
 
 
 
+
+class Admin(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField(unique=True)
+    password = models.CharField(max_length=128)
+
+    def __str__(self):
+        return self.name

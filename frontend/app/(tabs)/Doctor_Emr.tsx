@@ -1,765 +1,503 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ScrollView,
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
-  FlatList,
   TextInput,
-  Modal,
   Animated,
   Easing,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { processOCR, processACR, processNLP } from '../../services';
-import { getPatient } from '../../src/api/patients';
-import { getMedicalRecords, createMedicalRecord, updateMedicalRecord } from '../../src/api/medicalRecords';
-import { getAppointments } from '../../src/api/appointments';
-import { getPatients } from '../../src/api/patients';
-import { getUser } from '../../src/utils/session';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { getPatients, updatePatient } from '../../src/api/patients';
+import { createMedicalRecord, getMedicalRecords } from '../../src/api/medicalRecords';
 
-// ================= Navigation Types =================
-
-// ================= Interfaces =================
-interface PatientInfo {
+/* ================= Interfaces ================= */
+interface Patient {
+  id: string;
   name: string;
-  age: number;
   gender: string;
   contact: string;
-  patientId: string;
-}
-
-interface Prescription {
-  id: string;
-  medicine: string;
-  dosage: string;
-  duration: string;
-  notes: string;
-}
-
-interface LabResult {
-  id: string;
-  fileName: string;
-  fileUri: string;
-  fileType: string;
+  diseases?: string;
+  allergies?: string;
+  medications?: string;
 }
 
 interface MedicalHistory {
-  diagnoses: string[];
-  surgeries: string[];
-  allergies: string[];
-  chronicConditions: string[];
+  diseases: string;
+  allergies: string;
+  medications: string;
 }
 
-// ================= Component =================
+interface DentalIssue {
+  tooth: string;
+  issue: string;
+}
+
+interface TreatmentPlanItem {
+  tooth: string;
+  procedure: string;
+  status: 'Pending' | 'Completed';
+}
+
+/* ================= Sub-Components ================= */
+const AnimatedSection = ({ children, slideAnim }: { children: React.ReactNode; slideAnim: Animated.Value }) => (
+  <Animated.View
+    style={{
+      transform: [
+        {
+          translateY: slideAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [20, 0],
+          }),
+        },
+      ],
+    }}
+  >
+    {children}
+  </Animated.View>
+);
+
+/* ================= Component ================= */
 const Doctor_Emr = () => {
-  const router = useRouter();
-  const params: any = useLocalSearchParams();
-  // ================= States =================
-  const routePatientId = params?.patientId ? Number(params.patientId) : null;
+  /* ================= Patients ================= */
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  const [patient, setPatient] = useState<any | null>(null);
-  const [medicalRecord, setMedicalRecord] = useState<any | null>(null);
-  const [diagnosis, setDiagnosis] = useState<string>('');
-  const [prescribedDrugs, setPrescribedDrugs] = useState<string>('');
-  const [treatmentNotes, setTreatmentNotes] = useState<string>('');
+  /* ================= Fetch Patients ================= */
+  useEffect(() => {
+    const fetchPatients = async () => {
+      try {
+        setLoadingPatients(true);
+        const data = await getPatients();
+        const mapped: Patient[] = data.map((p: any) => ({
+          id: String(p.id),
+          name: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Unknown',
+          gender: p.gender || 'Unknown',
+          contact: p.phone_number || 'N/A',
+          diseases: p.diseases || '',
+          allergies: p.allergies || '',
+          medications: p.medications || '',
+        }));
+        setPatients(mapped);
+      } catch (e) {
+        setPatients([]);
+      } finally {
+        setLoadingPatients(false);
+      }
+    };
+    fetchPatients();
+  }, []);
 
-  // Patient selection for doctors
-  const [availablePatients, setAvailablePatients] = useState<any[]>([]);
-  const [selectedPatientId, setSelectedPatientId] = useState<number | null>(routePatientId ?? null);
-  const [loadingPatients, setLoadingPatients] = useState(false);
-
-  // keep legacy local UI states
+  /* ================= EMR Data ================= */
   const [medicalHistory, setMedicalHistory] = useState<MedicalHistory>({
-    diagnoses: [],
-    surgeries: [],
-    allergies: [],
-    chronicConditions: [],
+    diseases: '',
+    allergies: '',
+    medications: '',
   });
 
-  const [prescriptions] = useState<Prescription[]>([]);
+  const [dentalIssues, setDentalIssues] = useState('');
+  const [treatmentPlan, setTreatmentPlan] = useState('');
 
-  const [labResults, setLabResults] = useState<LabResult[]>([]);
+  const [diagnosis, setDiagnosis] = useState('');
+  const [notes, setNotes] = useState('');
+  const [prescription, setPrescription] = useState('');
 
-  const [doctorNotes, setDoctorNotes] = useState('');
-  // Processing (OCR/ACR/NLP)
-  const [processingFile, setProcessingFile] = useState<LabResult | null>(null);
-  const [ocrResult, setOcrResult] = useState<any | null>(null);
-  const [acrResult, setAcrResult] = useState<any | null>(null);
-  const [nlpInput, setNlpInput] = useState<string>('');
-  const [nlpResult, setNlpResult] = useState<any | null>(null);
+  /* ================= Route Params ================= */
+  const { patientId } = useLocalSearchParams();
+
+  /* ================= Patient Selection Logic ================= */
+  const handleSelectPatient = async (p: Patient) => {
+    setSelectedPatient(p);
+    // Load his existing chronic history into state
+    setMedicalHistory({
+      diseases: p.diseases || '',
+      allergies: p.allergies || '',
+      medications: p.medications || '',
+    });
+
+    // Load his latest medical record if exists
+    try {
+      const records = await getMedicalRecords({ patient: p.id });
+      if (records && records.length > 0) {
+        const latest = records[0];
+        setDiagnosis(latest.diagnosis || '');
+        setPrescription(latest.prescribed_drugs || '');
+        setNotes(latest.treatment_notes || '');
+        setDentalIssues(latest.dental_issues || '');
+        setTreatmentPlan(latest.treatment_plan || '');
+      } else {
+        setDiagnosis('');
+        setPrescription('');
+        setNotes('');
+        setDentalIssues('');
+        setTreatmentPlan('');
+      }
+    } catch (e) {
+      console.log("Error fetching latest record", e);
+    }
+  };
+
+  /* ================= Check for param-based selection ================= */
+  useEffect(() => {
+    if (patientId && patients.length > 0) {
+      // Only auto-select if different from current or nothing selected
+      if (!selectedPatient || selectedPatient.id !== String(patientId)) {
+        const target = patients.find(p => p.id === String(patientId));
+        if (target) {
+          handleSelectPatient(target);
+        }
+      }
+    }
+  }, [patientId, patients, selectedPatient]);
+
+  /* ================= AI ================= */
+  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [nlpInput, setNlpInput] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  // ================= Modals =================
-  const [historyModalVisible, setHistoryModalVisible] = useState(false);
-  const [labModalVisible, setLabModalVisible] = useState(false);
-
-  const [editHistory, setEditHistory] = useState<MedicalHistory>({
-    ...medicalHistory,
-  });
-
-  const [newLab, setNewLab] = useState<LabResult>({
-    id: '',
-    fileName: '',
-    fileUri: '',
-    fileType: '',
-  });
-
-  // ================= Animation =================
-  const fadeAnim = new Animated.Value(0);
-
+  /* ================= Animation ================= */
+  const slideAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(fadeAnim, {
+    Animated.timing(slideAnim, {
       toValue: 1,
-      duration: 600,
+      duration: 400,
       easing: Easing.out(Easing.exp),
       useNativeDriver: true,
     }).start();
   }, []);
 
-  // Fetch patient and their medical record when selectedPatientId changes
-  useEffect(() => {
-    const load = async () => {
-      if (!selectedPatientId) return;
-      try {
-        const p = await getPatient(Number(selectedPatientId));
-        setPatient(p);
-        // fetch medical records for this patient (latest first)
-        const recs = await getMedicalRecords({ patient: Number(selectedPatientId) });
-        if (Array.isArray(recs) && recs.length > 0) {
-          const r = recs[0];
-          setMedicalRecord(r);
-          setDiagnosis(r.diagnosis || '');
-          setPrescribedDrugs(r.prescribed_drugs || '');
-          setTreatmentNotes(r.treatment_notes || '');
-        } else {
-          setMedicalRecord(null);
-          setDiagnosis('');
-          setPrescribedDrugs('');
-          setTreatmentNotes('');
-        }
-      } catch (err) {
-        console.warn('Failed to load patient or records', err);
-      }
-    };
 
-    load();
-  }, [selectedPatientId]);
-
-  // If logged in as dentist, fetch their patients (appointments -> unique patients)
-  useEffect(() => {
-    const loadPatients = async () => {
-      try {
-        const session = getUser();
-        if (!session || session.role !== 'dentist') return;
-        setLoadingPatients(true);
-        const appts = await (await import('../../src/api/appointments')).getAppointments();
-        const myAppts = appts.filter((a: any) => a.dentist === session.id);
-        const patientIds = Array.from(new Set(myAppts.map((a: any) => a.patient)));
-        const allPatients = await (await import('../../src/api/patients')).getPatients();
-        const myPatients = allPatients.filter((p: any) => patientIds.includes(p.id));
-        setAvailablePatients(myPatients);
-      } catch (err) {
-        console.warn('Failed to load available patients', err);
-      } finally {
-        setLoadingPatients(false);
-      }
-    };
-
-    loadPatients();
-  }, []);
-
-  // ================= Handlers =================
-  const handleAddPrescription = () => {
-    router.push('/Prescription');
-  };
-
-  const handleSaveHistory = () => {
-    setMedicalHistory(editHistory);
-    setHistoryModalVisible(false);
-  };
-
-  const handleSaveNotes = () => {
-    console.log('Doctor Notes:', doctorNotes);
-    alert('Doctor notes saved successfully');
-  };
-
-  const handleSaveRecord = async () => {
-    if (!patient) {
-      alert('Please select a patient to save the record for');
-      return;
-    }
-    try {
-      if (medicalRecord && medicalRecord.id) {
-        const updated = await updateMedicalRecord(medicalRecord.id, {
-          diagnosis,
-          prescribed_drugs: prescribedDrugs,
-          treatment_notes: treatmentNotes,
-          patient: patient.id,
-        });
-        setMedicalRecord(updated);
-        alert('Medical record updated');
-      } else {
-        const created = await createMedicalRecord({
-          patient: patient.id,
-          diagnosis,
-          prescribed_drugs: prescribedDrugs,
-          treatment_notes: treatmentNotes,
-        });
-        setMedicalRecord(created);
-        alert('Medical record created');
-      }
-    } catch (err) {
-      console.warn('Failed to save medical record', err);
-      alert('Failed to save medical record');
-    }
-  };
-
-  // ================= File Picker =================
-  const pickLabFile = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'image/*'],
-      copyToCacheDirectory: true,
-    });
-
-    if (!result.canceled) {
-      const file = result.assets[0];
-      setNewLab({
-        ...newLab,
-        fileName: file.name,
-        fileUri: file.uri,
-        fileType: file.mimeType || 'unknown',
-      });
-    }
-  };
-
-  const pickProcessingFile = async () => {
+  /* ================= File Picker ================= */
+  const pickFile = async () => {
     const result = await DocumentPicker.getDocumentAsync({
       type: ['application/pdf', 'image/*', 'audio/*'],
-      copyToCacheDirectory: true,
     });
-
-    if (!result.canceled) {
-      const file = result.assets[0];
-      const picked: LabResult = {
-        id: '',
-        fileName: file.name,
-        fileUri: file.uri,
-        fileType: file.mimeType || 'unknown',
-      };
-      setProcessingFile(picked);
-    }
+    if (!result.canceled) setSelectedFile(result.assets[0]);
   };
 
-  const handleRunOCR = async () => {
-    if (!processingFile?.fileUri) {
-      alert('Please choose a file to process for OCR');
-      return;
-    }
+  /* ================= AI Actions ================= */
+  const runOCR = async () => {
+    if (!selectedFile) return alert('Choose a file first');
+    setProcessing(true);
     try {
-      setProcessing(true);
-      const res = await processOCR(processingFile);
-      setOcrResult(res);
-      // Optionally populate NLP input with extracted text
-      if (res?.text) setNlpInput(typeof res.text === 'string' ? res.text : JSON.stringify(res.text));
-    } catch (err) {
-      console.warn('OCR failed', err);
-      const errMsg =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as any).message)
-          : String(err);
-      alert(`OCR failed: ${errMsg}`);
+      const res = await processOCR(selectedFile);
+      if (res?.text) setNlpInput(res.text);
+    } catch (e: any) {
+      alert('OCR Error: ' + (e.message || e));
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleRunACR = async () => {
-    if (!processingFile?.fileUri) {
-      alert('Please choose a file to process for ACR');
-      return;
-    }
+  const runACR = async () => {
+    if (!selectedFile) return alert('Choose a file first');
+    setProcessing(true);
     try {
-      setProcessing(true);
-      const res = await processACR(processingFile);
-      setAcrResult(res);
-    } catch (err) {
-      console.warn('ACR failed', err);
-      const errMsg =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as any).message)
-          : String(err);
-      alert(`ACR failed: ${errMsg}`);
+      const res = await processACR(selectedFile);
+      if (res?.found && res.found.length > 0) {
+        const medsStr = res.found.map((m: any) => `${m.medication}: ${m.dosage}`).join('\n');
+        setPrescription(prev => prev ? `${prev}\n${medsStr}` : medsStr);
+        alert('Medications extracted and added to prescription');
+      } else {
+        alert('No medications detected in the document');
+      }
+    } catch (e: any) {
+      alert('ACR Error: ' + (e.message || e));
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleRunNLP = async () => {
-    if (!nlpInput || nlpInput.trim().length === 0) {
-      alert('Please provide text to analyze with NLP');
-      return;
-    }
+  const runNLP = async () => {
+    if (!nlpInput.trim()) return alert('Enter text first');
+    setProcessing(true);
     try {
-      setProcessing(true);
       const res = await processNLP(nlpInput);
-      setNlpResult(res);
-    } catch (err) {
-      console.warn('NLP failed', err);
-      const errMsg =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as any).message)
-          : String(err);
-      alert(`NLP failed: ${errMsg}`);
+      if (res?.extracted) {
+        const { diagnosis: diag, history: hist, notes: nts } = res.extracted;
+
+        if (diag) setDiagnosis(prev => prev ? `${prev}\n${diag}` : diag);
+        if (hist) setMedicalHistory(prev => prev ? `${prev}\n${hist}` : hist);
+        if (nts) setNotes(prev => prev ? `${prev}\n${nts}` : nts);
+
+        if (diag || hist || nts) {
+          alert('AI Analysis Complete: Form fields have been updated based on your text.');
+        } else {
+          alert('AI Analysis Complete: No specific clinical entities found.');
+        }
+      }
+    } catch (e: any) {
+      alert('NLP Error: ' + (e.message || e));
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleSaveLabResult = () => {
-    if (!newLab.fileUri) {
-      alert('Please upload a lab file');
-      return;
-    }
-
-    setLabResults([
-      ...labResults,
-      { ...newLab, id: (labResults.length + 1).toString() },
-    ]);
-
-    setNewLab({ id: '', fileName: '', fileUri: '', fileType: '' });
-    setLabModalVisible(false);
-  };
-
-  // ================= Animated Section =================
-  const AnimatedSection = ({ children }: { children: React.ReactNode }) => (
-    <Animated.View
-      style={{
-        opacity: fadeAnim,
-        transform: [
-          {
-            translateY: fadeAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [20, 0],
-            }),
-          },
-        ],
-      }}
-    >
-      {children}
-    </Animated.View>
-  );
-
-  // ================= UI =================
+  /* ================= UI ================= */
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Patient Selector (when dentist hasn't navigated with a patient) */}
-      {!selectedPatientId ? (
-        <AnimatedSection>
+    <ScrollView style={styles.container}>
+      {/* Patient Selector */}
+      {!selectedPatient ? (
+        <AnimatedSection slideAnim={slideAnim}>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Select Patient to edit EMR</Text>
+            <Text style={styles.sectionTitle}>Select Patient</Text>
             {loadingPatients ? (
-              <Text style={{ color: '#666' }}>Loading patients...</Text>
-            ) : availablePatients.length === 0 ? (
-              <Text style={{ color: '#666' }}>No patients found for your account.</Text>
+              <ActivityIndicator size="large" color="#4e91fc" />
             ) : (
-              availablePatients.map((p) => (
-                <TouchableOpacity key={p.id} style={{ paddingVertical: 10 }} onPress={() => setSelectedPatientId(p.id)}>
-                  <Text style={{ fontWeight: '700' }}>{p.first_name} {p.last_name}</Text>
-                  <Text style={{ color: '#666' }}>{p.email ?? p.phone}</Text>
+              patients.map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.patientItem}
+                  onPress={() => handleSelectPatient(p)}
+                >
+                  <Text style={styles.patientName}>{p.name}</Text>
+                  <Text style={styles.patientInfo}>{p.gender} • {p.contact}</Text>
                 </TouchableOpacity>
               ))
             )}
           </View>
         </AnimatedSection>
-      ) : null}
-
-      {/* Patient Info */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Patient Information</Text>
-          <Text style={styles.textItem}>Name: {patient ? `${patient.first_name || ''} ${patient.last_name || ''}` : '—'}</Text>
-          <Text style={styles.textItem}>Gender: {patient?.gender ?? '—'}</Text>
-          <Text style={styles.textItem}>Contact: {patient?.phone ?? patient?.contact ?? '—'}</Text>
-          <Text style={styles.textItem}>Patient ID: {patient?.id ?? '—'}</Text>
-        </View>
-      </AnimatedSection>
-
-      {/* Medical History */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medical History</Text>
-          <Text style={styles.textItem}>
-            Diagnoses: {medicalHistory.diagnoses.join(', ')}
-          </Text>
-          <Text style={styles.textItem}>
-            Surgeries: {medicalHistory.surgeries.join(', ')}
-          </Text>
-          <Text style={styles.textItem}>
-            Allergies: {medicalHistory.allergies.join(', ')}
-          </Text>
-          <Text style={styles.textItem}>
-            Chronic Conditions:{' '}
-            {medicalHistory.chronicConditions.join(', ')}
-          </Text>
-
+      ) : (
+        <View style={styles.activePatientHeader}>
+          <View>
+            <Text style={styles.activePatientLabel}>Working on</Text>
+            <Text style={styles.activePatientName}>{selectedPatient.name}</Text>
+          </View>
           <TouchableOpacity
-            style={styles.button}
-            onPress={() => setHistoryModalVisible(true)}
+            style={styles.changePatientBtn}
+            onPress={() => setSelectedPatient(null)}
           >
-            <Text style={styles.buttonText}>Update Medical History</Text>
+            <Text style={styles.changePatientBtnText}>Change Patient</Text>
           </TouchableOpacity>
         </View>
-      </AnimatedSection>
+      )}
 
-      {/* Medical Record Editor */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medical Record</Text>
-          {medicalRecord && medicalRecord.record_date ? (
-            <Text style={{ color: '#666', marginBottom: 8 }}>Last: {new Date(medicalRecord.record_date).toLocaleString()}</Text>
-          ) : null}
-
-          <Text style={styles.textItem}>Diagnosis</Text>
-          <TextInput
-            style={[styles.textInput, { height: 100 }]}
-            multiline
-            value={diagnosis}
-            onChangeText={setDiagnosis}
-            placeholder="Enter diagnosis..."
-          />
-
-          <Text style={styles.textItem}>Prescribed Drugs</Text>
-          <TextInput
-            style={[styles.textInput, { height: 80 }]}
-            multiline
-            value={prescribedDrugs}
-            onChangeText={setPrescribedDrugs}
-            placeholder="List prescribed drugs..."
-          />
-
-          <Text style={styles.textItem}>Treatment Notes</Text>
-          <TextInput
-            style={[styles.textInput, { height: 120 }]}
-            multiline
-            value={treatmentNotes}
-            onChangeText={setTreatmentNotes}
-            placeholder="Notes about treatment..."
-          />
-
-          <TouchableOpacity style={styles.button} onPress={handleSaveRecord}>
-            <Text style={styles.buttonText}>{medicalRecord ? 'Update Record' : 'Create Record'}</Text>
-          </TouchableOpacity>
-        </View>
-      </AnimatedSection>
-
-      {/* Prescriptions */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Prescriptions</Text>
-          <FlatList
-            data={prescriptions}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.card}>
-                <Text style={styles.textItem}>
-                  Medicine: {item.medicine}
-                </Text>
-                <Text style={styles.textItem}>Dosage: {item.dosage}</Text>
-                <Text style={styles.textItem}>
-                  Duration: {item.duration}
-                </Text>
-                <Text style={styles.textItem}>Notes: {item.notes}</Text>
-              </View>
-            )}
-          />
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={handleAddPrescription}
-          >
-            <Text style={styles.buttonText}>Add Prescription</Text>
-          </TouchableOpacity>
-        </View>
-      </AnimatedSection>
-
-      {/* Lab Results */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lab Results</Text>
-
-          <FlatList
-            data={labResults}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.card}>
-                <Text style={styles.textItem}>
-                  File: {item.fileName}
-                </Text>
-                <Text style={styles.textItem}>
-                  Type: {item.fileType}
-                </Text>
-              </View>
-            )}
-          />
-
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => setLabModalVisible(true)}
-          >
-            <Text style={styles.buttonText}>Add Lab Result</Text>
-          </TouchableOpacity>
-        </View>
-      </AnimatedSection>
-
-      {/* Doctor Notes */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Doctor's Notes</Text>
-          <TextInput
-            style={styles.textInput}
-            multiline
-            placeholder="Write your notes here..."
-            value={doctorNotes}
-            onChangeText={setDoctorNotes}
-          />
-          <TouchableOpacity style={styles.button} onPress={handleSaveNotes}>
-            <Text style={styles.buttonText}>Save Notes</Text>
-          </TouchableOpacity>
-        </View>
-      </AnimatedSection>
-
-      {/* OCR / ACR / NLP Section */}
-      <AnimatedSection>
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>OCR / ACR / NLP</Text>
-
-          <View style={{ marginBottom: 8 }}>
-            <TouchableOpacity style={styles.button} onPress={pickProcessingFile}>
-              <Text style={styles.buttonText}>Choose File for OCR/ACR</Text>
-            </TouchableOpacity>
-            {processingFile?.fileName ? (
-              <Text style={{ marginTop: 8, color: '#555' }}>Selected: {processingFile.fileName}</Text>
-            ) : null}
-          </View>
-
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.button, styles.flex]} onPress={handleRunOCR}>
-              <Text style={styles.buttonText}>Run OCR</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.flex]} onPress={handleRunACR}>
-              <Text style={styles.buttonText}>Run ACR</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ marginTop: 12 }}>
-            <Text style={styles.textItem}>NLP Input (use extracted OCR text or paste your own):</Text>
-            <TextInput
-              style={[styles.textInput, { height: 120 }]}
-              multiline
-              value={nlpInput}
-              onChangeText={setNlpInput}
-              placeholder="Paste text or use OCR result..."
-            />
-            <TouchableOpacity style={styles.button} onPress={handleRunNLP}>
-              <Text style={styles.buttonText}>Run NLP</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ marginTop: 8 }}>
-            {processing ? <Text style={{ color: '#666' }}>Processing...</Text> : null}
-
-            {ocrResult ? (
-              <View style={[styles.card, { marginTop: 10 }]}>
-                <Text style={styles.sectionTitle}>OCR Result</Text>
-                <Text style={{ color: '#555' }}>{typeof ocrResult === 'string' ? ocrResult : (ocrResult?.text ?? JSON.stringify(ocrResult, null, 2))}</Text>
-              </View>
-            ) : null}
-
-            {acrResult ? (
-              <View style={[styles.card, { marginTop: 10 }]}>
-                <Text style={styles.sectionTitle}>ACR Result</Text>
-                {/* Display medication list nicely */}
-                {Array.isArray(acrResult?.found) && acrResult.found.length > 0 ? (
-                  acrResult.found.map((m: any, i: number) => (
-                    <View key={i} style={{ marginBottom: 6 }}>
-                      <Text style={{ color: '#333', fontWeight: '700' }}>{m.medication}</Text>
-                      <Text style={{ color: '#555' }}>{m.dosage}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={{ color: '#555' }}>No medications found</Text>
-                )}
-              </View>
-            ) : null}
-
-            {nlpResult ? (
-              <View style={[styles.card, { marginTop: 10 }]}>
-                <Text style={styles.sectionTitle}>NLP Result</Text>
-                <Text style={{ color: '#555' }}>{JSON.stringify(nlpResult, null, 2)}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </AnimatedSection>
-
-      {/* ===== Medical History Modal ===== */}
-      <Modal visible={historyModalVisible} transparent animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.sectionTitle}>Edit Medical History</Text>
-
-            {(['diagnoses', 'surgeries', 'allergies', 'chronicConditions'] as const).map(
-              (field) => (
-                <TextInput
-                  key={field}
-                  style={styles.textInput}
-                  placeholder={field}
-                  value={editHistory[field].join(', ')}
-                  onChangeText={(text) =>
-                    setEditHistory({
-                      ...editHistory,
-                      [field]: text.split(',').map((t) => t.trim()),
-                    })
-                  }
-                />
-              )
-            )}
-
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.button, styles.flex]}
-                onPress={handleSaveHistory}
-              >
-                <Text style={styles.buttonText}>Save</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.button, styles.cancel]}
-                onPress={() => setHistoryModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
+      {selectedPatient && (
+        <>
+          {/* Medical History */}
+          <AnimatedSection slideAnim={slideAnim}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Medical History</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Diseases"
+                value={medicalHistory.diseases}
+                onChangeText={(t) => setMedicalHistory({ ...medicalHistory, diseases: t })}
+              />
+              <TextInput
+                style={styles.textInput}
+                placeholder="Allergies"
+                value={medicalHistory.allergies}
+                onChangeText={(t) => setMedicalHistory({ ...medicalHistory, allergies: t })}
+              />
+              <TextInput
+                style={styles.textInput}
+                placeholder="Medications"
+                value={medicalHistory.medications}
+                onChangeText={(t) => setMedicalHistory({ ...medicalHistory, medications: t })}
+              />
             </View>
-          </View>
-        </View>
-      </Modal>
+          </AnimatedSection>
 
-      {/* ===== Lab Upload Modal ===== */}
-      <Modal visible={labModalVisible} transparent animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.sectionTitle}>Upload Lab Result</Text>
-
-            <TouchableOpacity style={styles.button} onPress={pickLabFile}>
-              <Text style={styles.buttonText}>Choose File</Text>
-            </TouchableOpacity>
-
-            {newLab.fileName ? (
-              <Text style={{ marginTop: 10, color: '#555' }}>
-                Selected: {newLab.fileName}
-              </Text>
-            ) : null}
-
-            <View style={styles.row}>
-              <TouchableOpacity
-                style={[styles.button, styles.flex]}
-                onPress={handleSaveLabResult}
-              >
-                <Text style={styles.buttonText}>Save</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.button, styles.cancel]}
-                onPress={() => setLabModalVisible(false)}
-              >
-                <Text style={styles.buttonText}>Cancel</Text>
-              </TouchableOpacity>
+          {/* Dental & Diagnosis */}
+          <AnimatedSection slideAnim={slideAnim}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Diagnosis & Notes</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Diagnosis"
+                value={diagnosis}
+                onChangeText={setDiagnosis}
+              />
+              <TextInput
+                style={styles.textInput}
+                placeholder="Dental Issues (e.g., Tooth 14: Caries)"
+                value={dentalIssues}
+                onChangeText={setDentalIssues}
+              />
+              <TextInput
+                style={[styles.textInput, { height: 100 }]}
+                multiline
+                placeholder="Clinical Notes"
+                value={notes}
+                onChangeText={setNotes}
+              />
             </View>
-          </View>
-        </View>
-      </Modal>
+          </AnimatedSection>
+
+          {/* Treatment & Prescription */}
+          <AnimatedSection slideAnim={slideAnim}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Treatment & Prescription</Text>
+              <TextInput
+                style={[styles.textInput, { height: 80 }]}
+                multiline
+                placeholder="Treatment Plan"
+                value={treatmentPlan}
+                onChangeText={setTreatmentPlan}
+              />
+              <TextInput
+                style={styles.textInput}
+                placeholder="Prescription"
+                value={prescription}
+                onChangeText={setPrescription}
+              />
+            </View>
+          </AnimatedSection>
+
+          {/* OCR / ACR / NLP */}
+          <AnimatedSection slideAnim={slideAnim}>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>OCR / ACR / NLP</Text>
+              <TouchableOpacity style={styles.button} onPress={pickFile}>
+                <Text style={styles.buttonText}>Choose File</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.button} onPress={runOCR}>
+                <Text style={styles.buttonText}>Run OCR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.button} onPress={runACR}>
+                <Text style={styles.buttonText}>Run ACR</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.textInput, { height: 100 }]}
+                multiline
+                placeholder="NLP Input"
+                value={nlpInput}
+                onChangeText={setNlpInput}
+              />
+              <TouchableOpacity style={styles.button} onPress={runNLP}>
+                <Text style={styles.buttonText}>Run NLP</Text>
+              </TouchableOpacity>
+              {processing && <Text style={{ marginTop: 10 }}>Processing...</Text>}
+            </View>
+          </AnimatedSection>
+
+          {/* Save Button */}
+          <AnimatedSection slideAnim={slideAnim}>
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton]}
+              onPress={async () => {
+                if (!selectedPatient) return;
+                setProcessing(true);
+                try {
+                  // 1. Update patient chronic history
+                  await updatePatient(Number(selectedPatient.id), {
+                    diseases: medicalHistory.diseases,
+                    allergies: medicalHistory.allergies,
+                    medications: medicalHistory.medications,
+                  });
+
+                  // 2. Create new Medical Record for this encounter
+                  await createMedicalRecord({
+                    patient: Number(selectedPatient.id),
+                    diagnosis: diagnosis,
+                    prescribed_drugs: prescription,
+                    treatment_notes: notes,
+                    dental_issues: dentalIssues,
+                    treatment_plan: treatmentPlan,
+                  });
+
+                  alert('EMR Saved Successfully');
+                } catch (e: any) {
+                  alert('Error saving EMR: ' + (e.message || e));
+                } finally {
+                  setProcessing(false);
+                }
+              }}
+            >
+              <Text style={styles.buttonText}>Save Patient EMR</Text>
+            </TouchableOpacity>
+          </AnimatedSection>
+          <View style={{ height: 40 }} />
+        </>
+      )}
     </ScrollView>
   );
 };
 
 export default Doctor_Emr;
 
-// ================= Styles =================
+/* ================= Styles ================= */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f4f6fb',
-    padding: 10,
-  },
-  section: {
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-    elevation: 5,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 15,
-  },
-  textItem: {
-    fontSize: 16,
-    marginBottom: 5,
-    color: '#555',
+  container: { flex: 1, backgroundColor: '#f4f6fb', padding: 10 },
+  section: { backgroundColor: '#fff', padding: 20, borderRadius: 15, marginBottom: 20 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 15 },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: '#fafafa',
   },
   button: {
-    marginTop: 15,
     backgroundColor: '#4e91fc',
     padding: 12,
     borderRadius: 10,
     alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  card: {
-    padding: 15,
-    backgroundColor: '#f0f3ff',
-    borderRadius: 12,
-    marginVertical: 5,
-  },
-  textInput: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#d3d3d3',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    marginVertical: 8,
-    backgroundColor: '#fafafa',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  modalContent: {
-    width: '90%',
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 15,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginTop: 10,
   },
-  flex: {
-    flex: 0.45,
+  buttonText: { color: '#fff', fontWeight: '700' },
+  patientItem: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginBottom: 10,
   },
-  cancel: {
-    flex: 0.45,
-    backgroundColor: '#f44336',
+  patientSelected: { backgroundColor: '#e8f0ff', borderColor: '#4e91fc' },
+  patientName: { fontWeight: '700', fontSize: 16 },
+  patientInfo: { color: '#666', marginTop: 2 },
+  saveButton: {
+    backgroundColor: '#28a745',
+    marginVertical: 20,
+    height: 60,
+    justifyContent: 'center',
+  },
+  activePatientHeader: {
+    backgroundColor: '#fff',
+    margin: 16,
+    padding: 20,
+    borderRadius: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  activePatientLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  activePatientName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  changePatientBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  changePatientBtnText: {
+    color: '#475569',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

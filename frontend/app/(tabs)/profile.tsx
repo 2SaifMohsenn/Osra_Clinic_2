@@ -1,7 +1,16 @@
+// profile.tsx (Patient Profile)
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
-const MUTED = '#64748B';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, Dimensions } from 'react-native';
+
+const { width: WINDOW_WIDTH } = Dimensions.get('window');
+
+// Palette (Unified Soft Medical)
+const COLOR_PRIMARY = '#2E8BC0';
+const COLOR_BG = '#F8FAFC';
+const COLOR_CARD = '#FFFFFF';
+const COLOR_TEXT = '#0F172A';
+const COLOR_SUBTEXT = '#64748B';
+const COLOR_BORDER = '#F1F5F9';
 
 export default function Profile() {
   const [patient, setPatient] = React.useState<any | null>(null);
@@ -44,7 +53,6 @@ export default function Profile() {
       const api = await import('@/src/api/patients');
       if (patient && patient.id) {
         const updated = await api.updatePatient(patient.id, form);
-        // update session
         const s = (await import('@/src/utils/session'));
         const cur = s.getUser();
         if (cur) {
@@ -60,25 +68,15 @@ export default function Profile() {
     }
   };
 
-  // Password change state
   const [currentPassword, setCurrentPassword] = React.useState('');
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [passwordLoading, setPasswordLoading] = React.useState(false);
 
   const handleChangePassword = async () => {
-    if (!patient || !patient.id) {
-      alert('No patient loaded');
-      return;
-    }
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      alert('Please fill all password fields');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      alert('New passwords do not match');
-      return;
-    }
+    if (!patient || !patient.id) return alert('No patient loaded');
+    if (!currentPassword || !newPassword || !confirmPassword) return alert('Please fill all password fields');
+    if (newPassword !== confirmPassword) return alert('New passwords do not match');
 
     setPasswordLoading(true);
     try {
@@ -89,67 +87,223 @@ export default function Profile() {
       setConfirmPassword('');
       alert('Password updated');
     } catch (e: any) {
-      const msg = e?.response?.data?.message || 'Failed to update password';
-      alert(msg);
+      alert(e?.response?.data?.message || 'Failed to update password');
     } finally {
       setPasswordLoading(false);
     }
   };
 
+  const initials = patient ? `${(patient.first_name || '').charAt(0)}${(patient.last_name || '').charAt(0)}`.toUpperCase() : 'JD';
+
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC', padding: 18 }}>
-      <Text style={styles.pageTitle}>Profile</Text>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+      {/* Identity Header */}
+      <View style={styles.header}>
+        <View style={styles.avatarLarge}>
+          <Text style={styles.avatarText}>{initials}</Text>
+        </View>
+        <Text style={styles.userName}>{form.first_name} {form.last_name}</Text>
+        <Text style={styles.userRole}>Patient Account</Text>
+      </View>
 
       {/* Personal Info Card */}
-      <View style={[styles.card, CARD_SHADOW]}>
-        <Text style={styles.cardTitle}>Personal Info</Text>
-        <TextInput style={styles.input} placeholder="First Name" value={form.first_name} onChangeText={(t) => setForm({ ...form, first_name: t })} />
-        <TextInput style={styles.input} placeholder="Last Name" value={form.last_name} onChangeText={(t) => setForm({ ...form, last_name: t })} />
-        <TextInput style={styles.input} placeholder="Email" value={form.email} onChangeText={(t) => setForm({ ...form, email: t })} />
-        <TextInput style={styles.input} placeholder="Phone" value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} />
-        <TextInput style={styles.input} placeholder="Address" value={form.address} onChangeText={(t) => setForm({ ...form, address: t })} />
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Personal Information</Text>
+          <View style={styles.cardIconBox}><Text style={{ fontSize: 16 }}>👤</Text></View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>First Name</Text>
+          <TextInput style={styles.input} value={form.first_name} onChangeText={(t) => setForm({ ...form, first_name: t })} />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Last Name</Text>
+          <TextInput style={styles.input} value={form.last_name} onChangeText={(t) => setForm({ ...form, last_name: t })} />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Email Address</Text>
+          <TextInput style={styles.input} value={form.email} onChangeText={(t) => setForm({ ...form, email: t })} keyboardType="email-address" />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Phone Number</Text>
+          <TextInput style={styles.input} value={form.phone} onChangeText={(t) => setForm({ ...form, phone: t })} keyboardType="phone-pad" />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Mailing Address</Text>
+          <TextInput style={styles.input} value={form.address} onChangeText={(t) => setForm({ ...form, address: t })} />
+        </View>
 
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>Save Profile</Text>
+          <Text style={styles.saveBtnText}>Update Profile</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Password Update */}
-      {/* <View style={[styles.card, CARD_SHADOW]}>
-        <Text style={styles.cardTitle}>Medical Info</Text>
-        <TextInput style={styles.input} placeholder="Medical History" defaultValue="None" />
-        <TextInput style={styles.input} placeholder="Allergies" defaultValue="Peanuts" />
-        <TextInput style={styles.input} placeholder="Current Medications" defaultValue="Vitamin D" />
-      </View> */}
+      {/* Password Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Security & Password</Text>
+          <View style={[styles.cardIconBox, { backgroundColor: '#FFF7ED' }]}><Text style={{ fontSize: 16 }}>🔐</Text></View>
+        </View>
 
-      {/* Password Update */}
-      <View style={[styles.card, CARD_SHADOW]}>
-        <Text style={styles.cardTitle}>Password</Text>
-        <TextInput style={styles.input} placeholder="Current Password" secureTextEntry value={currentPassword} onChangeText={setCurrentPassword} />
-        <TextInput style={styles.input} placeholder="New Password" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-        <TextInput style={styles.input} placeholder="Confirm New Password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
-        <TouchableOpacity style={[styles.saveBtn, passwordLoading && { opacity: 0.6 }]} onPress={handleChangePassword} disabled={passwordLoading}>
-          <Text style={styles.saveBtnText}>{passwordLoading ? 'Updating…' : 'Update Password'}</Text>
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Current Password</Text>
+          <TextInput style={styles.input} secureTextEntry value={currentPassword} onChangeText={setCurrentPassword} />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>New Password</Text>
+          <TextInput style={styles.input} secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Confirm New Password</Text>
+          <TextInput style={styles.input} secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+        </View>
+
+        <TouchableOpacity style={[styles.passwordBtn, passwordLoading && { opacity: 0.6 }]} onPress={handleChangePassword} disabled={passwordLoading}>
+          <Text style={styles.passwordBtnText}>{passwordLoading ? 'UPDATING...' : 'CHANGE PASSWORD'}</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={{ height: 40 }} />
+      <View style={{ height: 80 }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  pageTitle: { fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0f172a' },
-  card: { backgroundColor: CARD_BG, borderRadius: 12, padding: 16, marginBottom: 16 },
-  cardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#0f172a' },
-  input: {
-    backgroundColor: '#F3F4F6',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 12,
-    fontSize: 14,
-    color: '#111827',
+  container: {
+    flex: 1,
+    backgroundColor: COLOR_BG,
   },
-  saveBtn: { backgroundColor: PRIMARY, padding: 12, borderRadius: 10, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontWeight: '700' },
+  scrollContent: {
+    padding: 24,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 32,
+    marginTop: 20,
+  },
+  avatarLarge: {
+    width: 100,
+    height: 100,
+    borderRadius: 36,
+    backgroundColor: COLOR_PRIMARY,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: COLOR_PRIMARY,
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLOR_TEXT,
+    marginBottom: 4,
+  },
+  userRole: {
+    fontSize: 14,
+    color: COLOR_SUBTEXT,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  card: {
+    backgroundColor: COLOR_CARD,
+    borderRadius: 32,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#64748B',
+    shadowOpacity: 0.06,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLOR_TEXT,
+  },
+  cardIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputGroup: {
+    marginBottom: 18,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLOR_SUBTEXT,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  input: {
+    height: 54,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLOR_TEXT,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  saveBtn: {
+    backgroundColor: COLOR_PRIMARY,
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    shadowColor: COLOR_PRIMARY,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  saveBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+  passwordBtn: {
+    backgroundColor: '#2E8BC0',
+    height: 58,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  passwordBtnText: {
+    color: '#ffffffff',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: 1,
+  },
 });

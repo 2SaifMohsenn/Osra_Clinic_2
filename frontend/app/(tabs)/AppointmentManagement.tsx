@@ -1,213 +1,340 @@
+// AppointmentManagement.tsx
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { PRIMARY, CARD_SHADOW, BG as CARD_BG } from './theme';
+import React, { useEffect, useState } from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+  Dimensions
+} from 'react-native';
+import { getAppointments, deleteAppointment, updateAppointment } from '@/src/api/appointments';
+import { getPatients } from '@/src/api/patients';
+import { getDentists } from '@/src/api/dentists';
+import { Image } from 'expo-image';
 
+const { width: WINDOW_WIDTH } = Dimensions.get('window');
 
-const INITIAL_APPOINTMENTS = [
-  { id: 1, patient: 'Ava Martinez', dentist: 'Dr. Lee', date: '2025-11-05', status: 'Scheduled' },
-  { id: 2, patient: 'James Garcia', dentist: 'Dr. Chen', date: '2025-11-06', status: 'Completed' },
-  { id: 3, patient: 'Sophia Rodriguez', dentist: 'Dr. Carter', date: '2025-11-07', status: 'Pending' },
-];
+// Theme Constants
+const COLOR_PRIMARY = '#2E8BC0';
+const COLOR_BG = '#F8FAFC';
+const COLOR_CARD = '#FFFFFF';
+const COLOR_TEXT = '#0F172A';
+const COLOR_SUBTEXT = '#64748B';
+const COLOR_BORDER = '#F1F5F9';
 
 export default function AppointmentManagement() {
   const router = useRouter();
-  const [appointments, setAppointments] = useState(INITIAL_APPOINTMENTS);
-  const [showForm, setShowForm] = useState(false);
-  const [newAppointment, setNewAppointment] = useState({
-    patient: '',
-    dentist: '',
-    date: '',
-    status: 'Scheduled',
-  });
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [patientMap, setPatientMap] = useState<Record<number, string>>({});
+  const [dentistMap, setDentistMap] = useState<Record<number, string>>({});
 
-  const handleAddAppointment = () => {
-    if (!newAppointment.patient || !newAppointment.dentist || !newAppointment.date) return;
-    setAppointments([...appointments, { id: Date.now(), ...newAppointment }]);
-    setNewAppointment({ patient: '', dentist: '', date: '', status: 'Scheduled' });
-    setShowForm(false);
+  useEffect(() => {
+    fetchGlobalData();
+  }, []);
+
+  const fetchGlobalData = async () => {
+    setLoading(true);
+    try {
+      const [allAppts, patients, dentists] = await Promise.all([
+        getAppointments(),
+        getPatients(),
+        getDentists(),
+      ]);
+
+      // Create maps for quick lookup
+      const pMap: Record<number, string> = {};
+      patients.forEach((p: any) => pMap[p.id] = `${p.first_name} ${p.last_name}`);
+
+      const dMap: Record<number, string> = {};
+      dentists.forEach((d: any) => dMap[d.id] = `Dr. ${d.last_name}`);
+
+      setPatientMap(pMap);
+      setDentistMap(dMap);
+      setAppointments(allAppts);
+    } catch (err) {
+      console.log('Global Appointment Fetch Error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = (id: number) => {
-    setAppointments(appointments.filter((a) => a.id !== id));
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to cancel this appointment?')) return;
+    try {
+      await deleteAppointment(id);
+      setAppointments(appointments.filter((a) => a.id !== id));
+    } catch (err) {
+      alert('Failed to cancel appointment');
+    }
   };
 
-  const handleEdit = (id: number) => {
-    alert(`Editing appointment ID: ${id}`);
+  const getStatusColor = (status: string) => {
+    switch ((status || '').toLowerCase()) {
+      case 'confirmed': return '#10B981';
+      case 'pending': return '#F59E0B';
+      case 'upcoming': return '#3B82F6';
+      case 'completed': return '#6366F1';
+      case 'cancelled': return '#EF4444';
+      default: return COLOR_SUBTEXT;
+    }
   };
 
-  const handleReschedule = (id: number) => {
-    alert(`Rescheduling appointment ID: ${id}`);
-  };
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLOR_PRIMARY} />
+        <Text style={styles.loadingText}>Loading Global Schedule...</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Text style={styles.pageTitle}>Appointment Management</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowForm(!showForm)}>
-          <Text style={styles.addButtonText}>
-            {showForm ? 'Close Form ✖' : '➕ Add Appointment'}
-          </Text>
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>Global Schedule</Text>
+          <Text style={styles.headerSub}>Master Log • All Doctors & Patients</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={fetchGlobalData}
+        >
+          <Text style={styles.refreshBtnText}>🔄 Refresh</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main Content */}
-      <ScrollView contentContainerStyle={styles.content}>
-        {showForm && (
-          <View style={styles.formCard}>
-            <Text style={styles.sectionTitle}>Add New Appointment</Text>
-            <TextInput
-              placeholder="Patient Name"
-              style={styles.input}
-              value={newAppointment.patient}
-              onChangeText={(text) => setNewAppointment({ ...newAppointment, patient: text })}
-            />
-            <TextInput
-              placeholder="Dentist Name"
-              style={styles.input}
-              value={newAppointment.dentist}
-              onChangeText={(text) => setNewAppointment({ ...newAppointment, dentist: text })}
-            />
-            <TextInput
-              placeholder="Date (YYYY-MM-DD)"
-              style={styles.input}
-              value={newAppointment.date}
-              onChangeText={(text) => setNewAppointment({ ...newAppointment, date: text })}
-            />
-            <TouchableOpacity style={styles.saveButton} onPress={handleAddAppointment}>
-              <Text style={styles.saveButtonText}>💾 Save Appointment</Text>
-            </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {appointments.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No appointments found in the system.</Text>
           </View>
-        )}
+        ) : (
+          appointments.map((a) => (
+            <View key={a.id} style={styles.appointmentCard}>
+              {/* Status Ribbon */}
+              <View style={[styles.statusRibbon, { backgroundColor: getStatusColor(a.status) }]} />
 
-        {/* Appointment Table */}
-        <View style={styles.tableCard}>
-          <Text style={styles.sectionTitle}>Appointments List</Text>
+              <View style={styles.cardMain}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.patientInfo}>
+                    <Text style={styles.patientName}>{patientMap[a.patient] || 'Unknown Patient'}</Text>
+                    <Text style={styles.serviceText}>{a.notes || 'General Checkup'}</Text>
+                  </View>
+                  <View style={styles.statusBadge}>
+                    <Text style={[styles.statusText, { color: getStatusColor(a.status) }]}>
+                      {(a.status || 'Scheduled').toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
 
-          {/* Table Header */}
-          <View style={[styles.tableRow, styles.tableHeader]}>
-            <Text style={[styles.tableCell, styles.headerCell]}>Patient</Text>
-            <Text style={[styles.tableCell, styles.headerCell]}>Dentist</Text>
-            <Text style={[styles.tableCell, styles.headerCell]}>Date</Text>
-            <Text style={[styles.tableCell, styles.headerCell]}>Status</Text>
-            <Text style={[styles.tableCell, styles.headerCell]}>Actions</Text>
-          </View>
+                <View style={styles.divider} />
 
-          {/* Table Rows */}
-          {appointments.map((a) => (
-            <View key={a.id} style={styles.tableRow}>
-              <Text style={styles.tableCell}>{a.patient}</Text>
-              <Text style={styles.tableCell}>{a.dentist}</Text>
-              <Text style={styles.tableCell}>{a.date}</Text>
-              <Text
-                style={[
-                  styles.tableCell,
-                  { color: a.status === 'Completed' ? '#16a34a' : a.status === 'Pending' ? '#ca8a04' : '#2563eb' },
-                ]}
-              >
-                {a.status}
-              </Text>
-              <View style={[styles.tableCell, styles.actionsCell]}>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#BFDBFE' }]}
-                  onPress={() => handleEdit(a.id)}
-                >
-                  <Text style={styles.actionText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#FCD34D' }]}
-                  onPress={() => handleReschedule(a.id)}
-                >
-                  <Text style={styles.actionText}>Reschedule</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: '#FCA5A5' }]}
-                  onPress={() => handleDelete(a.id)}
-                >
-                  <Text style={styles.actionText}>Cancel</Text>
-                </TouchableOpacity>
+                <View style={styles.detailGrid}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>ASSIGNED DOCTOR</Text>
+                    <Text style={styles.detailValue}>{dentistMap[a.dentist] || 'Unassigned'}</Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>DATE & TIME</Text>
+                    <Text style={styles.detailValue}>{a.appointment_date} • {a.appointment_time || 'TBD'}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.editBtn]}
+                    onPress={() => alert('Editing restricted to management flow.')}
+                  >
+                    <Text style={styles.editBtnText}>Manage</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.cancelBtn]}
+                    onPress={() => handleDelete(a.id)}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          ))}
-        </View>
+          ))
+        )}
+        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );
 }
 
-/* ----- Styles ----- */
 const styles = StyleSheet.create({
-  topBar: {
+  container: {
+    flex: 1,
+    backgroundColor: COLOR_BG,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLOR_BG,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: COLOR_SUBTEXT,
+    fontWeight: '600',
+  },
+  header: {
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 24,
+    backgroundColor: '#fff',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomColor: '#E5E7EB',
+    alignItems: 'flex-end',
     borderBottomWidth: 1,
-    ...CARD_SHADOW,
+    borderBottomColor: COLOR_BORDER,
   },
-  pageTitle: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
-  addButton: {
-    backgroundColor: PRIMARY,
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLOR_TEXT,
+    letterSpacing: -0.5,
+  },
+  headerSub: {
+    fontSize: 14,
+    color: COLOR_SUBTEXT,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  refreshBtn: {
     paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-  },
-  addButtonText: { color: '#fff', fontWeight: '700' },
-  content: { padding: 20 },
-
-  formCard: {
-    backgroundColor: CARD_BG,
+    paddingHorizontal: 12,
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    ...CARD_SHADOW,
+    backgroundColor: '#F1F5F9',
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10, color: '#0f172a' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
-    backgroundColor: '#fff',
+  refreshBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLOR_PRIMARY,
   },
-  saveButton: {
-    backgroundColor: PRIMARY,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
+  scrollContent: {
+    padding: 20,
   },
-  saveButtonText: { color: '#fff', fontWeight: '700' },
-
-  tableCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 12,
-    padding: 16,
-    ...CARD_SHADOW,
-  },
-  tableHeader: {
-    backgroundColor: '#E0F2FE',
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-  },
-  tableRow: {
+  appointmentCard: {
+    backgroundColor: COLOR_CARD,
+    borderRadius: 24,
+    marginBottom: 16,
     flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomColor: '#E5E7EB',
-    borderBottomWidth: 1,
-    paddingVertical: 10,
+    overflow: 'hidden',
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLOR_BORDER,
   },
-  tableCell: { flex: 1, color: '#0f172a' },
-  headerCell: { fontWeight: '700', color: PRIMARY },
-  actionsCell: { flexDirection: 'row', gap: 6 },
-  actionBtn: {
-    borderRadius: 6,
-    paddingVertical: 4,
+  statusRibbon: {
+    width: 6,
+    height: '100%',
+  },
+  cardMain: {
+    flex: 1,
+    padding: 20,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+  },
+  patientInfo: {
+    flex: 1,
+  },
+  patientName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLOR_TEXT,
+    marginBottom: 2,
+  },
+  serviceText: {
+    fontSize: 13,
+    color: COLOR_SUBTEXT,
+    fontWeight: '600',
+  },
+  statusBadge: {
     paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.03)',
   },
-  actionText: { fontSize: 13, fontWeight: '700', color: '#111827' },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginBottom: 14,
+  },
+  detailGrid: {
+    flexDirection: 'row',
+    marginBottom: 18,
+  },
+  detailItem: {
+    flex: 1,
+  },
+  detailLabel: {
+    fontSize: 10,
+    color: COLOR_SUBTEXT,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: 14,
+    color: COLOR_TEXT,
+    fontWeight: '700',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editBtn: {
+    backgroundColor: '#F1F5F9',
+  },
+  editBtnText: {
+    color: COLOR_TEXT,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  cancelBtn: {
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    backgroundColor: '#FEF2F2',
+  },
+  cancelBtnText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyState: {
+    padding: 60,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: COLOR_SUBTEXT,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 });
