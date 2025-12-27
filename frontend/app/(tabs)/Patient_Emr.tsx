@@ -1,203 +1,167 @@
-// Patient_Emr.tsx
-import React, { useState, useEffect } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  FlatList,
-  TouchableOpacity,
-} from 'react-native';
-import { getMedicalRecords } from '../../src/api/medicalRecords';
-import { getUser } from '../../src/utils/session';
-import { getPatient } from '../../src/api/patients';
+import React, { useState, useEffect } from "react";
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator } from "react-native";
+import { getUser } from "../../src/utils/session";
+import { getPatient } from "../../src/api/patients";
+import { getMedicalRecords } from "../../src/api/medicalRecords";
 
-interface PatientInfo {
-  name: string;
-  age: number;
-  gender: string;
-  contact: string;
-}
-
-interface Prescription {
-  id: string;
-  medicine: string;
-  dosage: string;
-  startDate: string;
-  endDate: string;
-}
-
-interface LabResult {
-  id: string;
-  test: string;
-  result: string;
-  date: string;
-}
-
-interface Appointment {
-  id: string;
-  date: string;
-  doctor: string;
-  status: string;
-}
-
-const Patient_Emr = () => {
-  const [patient, setPatient] = useState<PatientInfo | null>(null);
-  const [medicalSummary, setMedicalSummary] = useState<any>({ diagnoses: [], allergies: [], chronicConditions: [] });
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
-  const [labResults, setLabResults] = useState<LabResult[]>([]);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [doctorNotes, setDoctorNotes] = useState<string[]>([]);
+const PatientEmr = () => {
+  const [loading, setLoading] = useState(true);
+  const [patientData, setPatientData] = useState<any>(null);
+  const [latestRecord, setLatestRecord] = useState<any>(null);
 
   useEffect(() => {
-    const load = async () => {
-      const session = getUser();
-      if (!session || session.role !== 'patient') return;
+    const fetchData = async () => {
       try {
-        const p = await getPatient(session.id);
-        setPatient({ name: `${p.first_name} ${p.last_name}`, age: 0, gender: p.gender, contact: p.phone });
-        const recs = await getMedicalRecords({ patient: session.id });
-        if (Array.isArray(recs) && recs.length > 0) {
-          const r = recs[0];
-          // Simple parsing of fields
-          setMedicalSummary({ diagnoses: r.diagnosis ? [r.diagnosis] : [], allergies: [], chronicConditions: [] });
-          setDoctorNotes([r.treatment_notes || '']);
-          // parse prescribed_drugs into list if it is comma-separated
-          if (r.prescribed_drugs) {
-            setPrescriptions([
-              { id: '1', medicine: r.prescribed_drugs, dosage: '', startDate: '', endDate: '' },
-            ]);
+        setLoading(true);
+        const user = getUser();
+        if (user && user.role === 'patient') {
+          const patientId = user.id;
+
+          // Fetch full patient data (for chronic history and DOB)
+          const p = await getPatient(patientId);
+          setPatientData(p);
+
+          // Fetch latest medical record
+          const records = await getMedicalRecords({ patient: patientId });
+          if (records && records.length > 0) {
+            setLatestRecord(records[0]);
           }
         }
-      } catch (err) {
-        console.warn('Failed to load patient or medical records', err);
+      } catch (error) {
+        console.error("Error fetching EMR data:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    load();
+    fetchData();
   }, []);
 
-  const handleDownloadEMR = () => {
-    // Implement download functionality here
-    console.log('Download EMR clicked');
-  };
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color="#2E8BC0" />
+      </View>
+    );
+  }
 
-  const handleShareEMR = () => {
-    // Implement share functionality here
-    console.log('Share EMR clicked');
+  if (!patientData) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Text>No patient data found. Please log in.</Text>
+      </View>
+    );
+  }
+
+  const calculateAge = (dob: string) => {
+    if (!dob) return "N/A";
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age.toString();
   };
 
   return (
     <ScrollView style={styles.container}>
-      {/* Personal Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Personal Information</Text>
-        {patient ? (
-          <>
-            <Text>Name: {patient.name}</Text>
-            <Text>Age: {patient.age}</Text>
-            <Text>Gender: {patient.gender}</Text>
-            <Text>Contact: {patient.contact}</Text>
-          </>
-        ) : (
-          <Text style={{ color: '#666' }}>No patient loaded. If you're a patient, ensure you are logged in. Otherwise choose a patient from your doctor's list.</Text>
-        )}
-      </View>
+      {/* Profile */}
+      <Section title="Profile">
+        <Info label="Name" value={`${patientData.first_name} ${patientData.last_name}`} />
+        <Info label="Age" value={calculateAge(patientData.date_of_birth)} />
+        <Info label="Gender" value={patientData.gender} />
+        <Info label="Phone" value={patientData.phone} />
+      </Section>
 
-      {/* Medical Summary */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Medical Summary</Text>
-        <Text>Diagnoses: {medicalSummary.diagnoses.join(', ')}</Text>
-        <Text>Allergies: {medicalSummary.allergies.join(', ')}</Text>
-        <Text>Chronic Conditions: {medicalSummary.chronicConditions.join(', ')}</Text>
-      </View>
+      {/* Medical History (Chronic) */}
+      <Section title="Chronic Medical History">
+        <Info label="Diseases" value={patientData.diseases || "None"} />
+        <Info label="Allergies" value={patientData.allergies || "None"} />
+        <Info label="Medications" value={patientData.medications || "None"} />
+      </Section>
 
-      {/* Prescriptions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Prescriptions</Text>
-        <FlatList
-          data={prescriptions}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text>Medicine: {item.medicine}</Text>
-              <Text>Dosage: {item.dosage}</Text>
-              <Text>Start Date: {item.startDate}</Text>
-              <Text>End Date: {item.endDate}</Text>
-              <TouchableOpacity style={styles.detailButton}>
-                <Text style={styles.detailButtonText}>View Details</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        />
-      </View>
+      {/* Latest Visit Details */}
+      {latestRecord ? (
+        <>
+          <Section title="Latest Diagnosis & Notes">
+            <Info label="Date" value={new Date(latestRecord.record_date).toLocaleDateString()} />
+            <Info label="Diagnosis" value={latestRecord.diagnosis} />
+            <Info label="Clinical Notes" value={latestRecord.treatment_notes} />
+          </Section>
 
-      {/* Lab Results */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Lab Results</Text>
-        <FlatList
-          data={labResults}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text>Test: {item.test}</Text>
-              <Text>Result: {item.result}</Text>
-              <Text>Date: {item.date}</Text>
-            </View>
-          )}
-        />
-      </View>
+          <Section title="Dental & Treatment">
+            <Info label="Dental Issues" value={latestRecord.dental_issues || "None reported"} />
+            <Info label="Treatment Plan" value={latestRecord.treatment_plan || "None specified"} />
+          </Section>
 
-      {/* Appointments */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Appointments</Text>
-        <FlatList
-          data={appointments}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text>Date: {item.date}</Text>
-              <Text>Doctor: {item.doctor}</Text>
-              <Text>Status: {item.status}</Text>
-            </View>
-          )}
-        />
-      </View>
-
-      {/* Doctor's Notes */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Doctor's Notes</Text>
-        {doctorNotes.map((note, index) => (
-          <View key={index} style={styles.noteCard}>
-            <Text>{note}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Optional Actions */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.button} onPress={handleDownloadEMR}>
-          <Text style={styles.buttonText}>Download EMR</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={handleShareEMR}>
-          <Text style={styles.buttonText}>Share EMR</Text>
-        </TouchableOpacity>
-      </View>
+          <Section title="Prescriptions">
+            <Info label="Prescribed Drugs" value={latestRecord.prescribed_drugs || "None"} />
+          </Section>
+        </>
+      ) : (
+        <Section title="Visit History">
+          <Text style={styles.noData}>No recent medical records found.</Text>
+        </Section>
+      )}
     </ScrollView>
   );
 };
 
-export default Patient_Emr;
+// Reusable Components
+const Section = ({ title, children }: any) => (
+  <View style={styles.section}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    {children}
+  </View>
+);
+
+const Info = ({ label, value }: any) => (
+  <View style={styles.infoRow}>
+    <Text style={styles.label}>{label}</Text>
+    <Text style={styles.value}>{value}</Text>
+  </View>
+);
+
+export default PatientEmr;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9f9f9', padding: 10 },
-  section: { marginBottom: 20, backgroundColor: '#fff', padding: 15, borderRadius: 10 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  card: { padding: 10, backgroundColor: '#eef2f5', borderRadius: 8, marginVertical: 5 },
-  noteCard: { padding: 10, backgroundColor: '#dff0d8', borderRadius: 8, marginVertical: 5 },
-  detailButton: { marginTop: 5, backgroundColor: '#2196F3', padding: 5, borderRadius: 5, alignItems: 'center' },
-  detailButtonText: { color: '#fff', fontWeight: 'bold' },
-  actions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
-  button: { backgroundColor: '#4CAF50', padding: 10, borderRadius: 8, flex: 0.48, alignItems: 'center' },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FA",
+    padding: 16,
+  },
+  center: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  section: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#2E8BC0",
+    marginBottom: 12,
+  },
+  infoRow: {
+    marginBottom: 8,
+  },
+  label: {
+    fontSize: 14,
+    color: "#555",
+  },
+  value: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  noData: {
+    color: "#666",
+    fontStyle: "italic",
+  },
 });

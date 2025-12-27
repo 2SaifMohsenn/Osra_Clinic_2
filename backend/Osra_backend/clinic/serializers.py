@@ -39,3 +39,8 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = MedicalRecord
         fields = "__all__"
+
+class AdminSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Admin
+        fields = "__all__"
