@@ -12,6 +12,9 @@ class DentistSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 class AppointmentSerializer(serializers.ModelSerializer):
+    dentist_name = serializers.CharField(source='dentist.__str__', read_only=True)
+    patient_name = serializers.CharField(source='patient.__str__', read_only=True)
+    
     class Meta:
         model = Appointment
         fields = "__all__"

@@ -30,8 +30,20 @@ async function uploadFileToEndpoint(endpoint: string, file: any) {
   }
 }
 
-export async function processACR(file: any) {
-  return uploadFileToEndpoint('/api/process/acr/', file);
+export async function processACR(input: any) {
+  // If input is a string, send it as JSON text
+  if (typeof input === 'string') {
+    try {
+      const response = await axios.post(`${API_BASE}/api/process/acr/`, { text: input });
+      return response.data;
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.message || error.message || 'Processing failed';
+      throw new Error(errorMsg);
+    }
+  }
+
+  // Otherwise, treat as a file upload
+  return uploadFileToEndpoint('/api/process/acr/', input);
 }
 
 export default processACR;

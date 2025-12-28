@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  ActivityIndicator,
   ScrollView,
 } from 'react-native';
 import Animated, {
@@ -77,23 +78,62 @@ export default function PatientDashboard() {
 
   // Floating Stats Animations
   const floatStat1 = useSharedValue(0);
-  const floatStat2 = useSharedValue(0);
   const floatStat3 = useSharedValue(0);
 
+  // Real Data State
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
+  const [dentistCount, setDentistCount] = useState(0);
+  const [loadingData, setLoadingData] = useState(false);
+
   useEffect(() => {
-    // Load patient data
+    // Load patient data and stats
     (async () => {
       try {
-        const session = (await import('@/src/utils/session')).getUser();
+        setLoadingData(true);
+        const { getUser } = await import('@/src/utils/session');
+        const session = getUser();
+
         if (session && session.role === 'patient') {
-          if (session.patient) {
-            setPatient(session.patient);
-          } else if (session.id) {
-            const p = await (await import('@/src/api/patients')).getPatient(session.id);
-            setPatient(p);
+          let pId = session.patient?.id || session.id;
+
+          // Get Patient Details if not fully in session
+          let pData = session.patient;
+          if (!pData || !pData.id) {
+            const { getPatient } = await import('@/src/api/patients');
+            pData = await getPatient(pId);
           }
+          setPatient(pData);
+
+          // Fetch Appointments
+          const { getAppointments } = await import('@/src/api/appointments');
+          const allApps = await getAppointments({ patient: pId });
+          // Sort by date (asc) for upcoming
+          const sortedApps = allApps.sort((a: any, b: any) =>
+            new Date(`${a.appointment_date}T${a.appointment_time}`).getTime() -
+            new Date(`${b.appointment_date}T${b.appointment_time}`).getTime()
+          );
+          setAppointments(sortedApps);
+
+          // Fetch Medical Records
+          const { getMedicalRecords } = await import('@/src/api/medicalRecords');
+          const allRecords = await getMedicalRecords({ patient: pId });
+          // Sort by date (desc) for recent
+          const sortedRecords = allRecords.sort((a: any, b: any) =>
+            new Date(b.record_date).getTime() - new Date(a.record_date).getTime()
+          );
+          setMedicalRecords(sortedRecords);
+
+          // Fetch Doctors Count
+          const { getDentists } = await import('@/src/api/dentists');
+          const allDentists = await getDentists();
+          setDentistCount(allDentists.length);
         }
-      } catch (e) { }
+      } catch (e) {
+        console.error("Dashboard Fetch Error:", e);
+      } finally {
+        setLoadingData(false);
+      }
     })();
 
     // Entrance animation - Slower and Simpler
@@ -103,7 +143,6 @@ export default function PatientDashboard() {
     // Floating Stats
     const floatConfig = { duration: 2500, easing: Easing.inOut(Easing.sin) };
     floatStat1.value = withRepeat(withTiming(-10, floatConfig), -1, true);
-    floatStat2.value = withDelay(400, withRepeat(withTiming(-12, floatConfig), -1, true));
     floatStat3.value = withDelay(800, withRepeat(withTiming(-8, floatConfig), -1, true));
   }, []);
 
@@ -132,7 +171,6 @@ export default function PatientDashboard() {
   }));
 
   const floatStyle1 = useAnimatedStyle(() => ({ transform: [{ translateY: floatStat1.value }] }));
-  const floatStyle2 = useAnimatedStyle(() => ({ transform: [{ translateY: floatStat2.value }] }));
   const floatStyle3 = useAnimatedStyle(() => ({ transform: [{ translateY: floatStat3.value }] }));
 
   const initials = patient ? `${(patient.first_name || '').charAt(0)}${(patient.last_name || '').charAt(0)}`.toUpperCase() : 'JD';
@@ -184,20 +222,14 @@ export default function PatientDashboard() {
             <Animated.View style={[styles.statCardGlass, floatStyle1]}>
               <View style={[styles.glassBackground, { backgroundColor: '#E0F2FE' + '60' }]} />
               <Text style={styles.statIcon}>📅</Text>
-              <Text style={styles.statValue}>2</Text>
-              <Text style={styles.statLabel}>Pending</Text>
-            </Animated.View>
-            <Animated.View style={[styles.statCardGlass, floatStyle2]}>
-              <View style={[styles.glassBackground, { backgroundColor: '#F0F9FF' + '60' }]} />
-              <Text style={styles.statIcon}>💊</Text>
-              <Text style={styles.statValue}>4</Text>
-              <Text style={styles.statLabel}>Active Meds</Text>
+              <Text style={styles.statValue}>{appointments.length}</Text>
+              <Text style={styles.statLabel}>Total Appts</Text>
             </Animated.View>
             <Animated.View style={[styles.statCardGlass, floatStyle3]}>
               <View style={[styles.glassBackground, { backgroundColor: '#F5F3FF' + '60' }]} />
-              <Text style={styles.statIcon}>📁</Text>
-              <Text style={styles.statValue}>12</Text>
-              <Text style={styles.statLabel}>Records</Text>
+              <Text style={styles.statIcon}>👨‍⚕️</Text>
+              <Text style={styles.statValue}>{dentistCount}</Text>
+              <Text style={styles.statLabel}>Doctors</Text>
             </Animated.View>
           </View>
 
@@ -212,17 +244,30 @@ export default function PatientDashboard() {
                   <Text style={styles.seeAllText}>See All</Text>
                 </TouchableOpacity>
               </View>
-              {APPOINTMENTS.map((item) => (
-                <View key={item.id} style={styles.appointmentRow}>
-                  <View style={styles.iconBox}>
-                    <Text style={{ fontSize: 20 }}>🗓️</Text>
+              {loadingData ? (
+                <ActivityIndicator size="small" color={COLOR_PRIMARY} />
+              ) : appointments.length > 0 ? (
+                appointments.slice(0, 3).map((item) => (
+                  <View key={item.id} style={styles.appointmentRow}>
+                    <View style={styles.iconBox}>
+                      <Text style={{ fontSize: 20 }}>🗓️</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.rowTitle}>{item.notes || 'Dental Session'}</Text>
+                      <Text style={styles.rowSub}>
+                        {item.dentist_name || `Dr. Osra`} • {item.appointment_date} {item.appointment_time}
+                      </Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: item.status?.toLowerCase() === 'completed' ? '#DCFCE7' : '#FEF9C3' }]}>
+                      <Text style={[styles.statusBadgeText, { color: item.status?.toLowerCase() === 'completed' ? '#166534' : '#854D0E' }]}>
+                        {item.status}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.rowTitle}>{item.title}</Text>
-                    <Text style={styles.rowSub}>{item.doctor} • {item.datetime}</Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              ) : (
+                <Text style={styles.emptyText}>No upcoming appointments</Text>
+              )}
             </View>
 
             {/* Records Card */}
@@ -233,30 +278,38 @@ export default function PatientDashboard() {
                   <Text style={styles.seeAllText}>View All</Text>
                 </TouchableOpacity>
               </View>
-              {RECORDS.map((item) => (
-                <View key={item.id} style={styles.recordRow}>
-                  <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
-                    <Text style={{ fontSize: 20 }}>📄</Text>
+              {loadingData ? (
+                <ActivityIndicator size="small" color={COLOR_PRIMARY} />
+              ) : medicalRecords.length > 0 ? (
+                medicalRecords.slice(0, 3).map((item) => (
+                  <View key={item.id} style={styles.recordRow}>
+                    <View style={[styles.iconBox, { backgroundColor: '#F0FDF4' }]}>
+                      <Text style={{ fontSize: 20 }}>📄</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{item.diagnosis || 'Medical Record'}</Text>
+                      <Text style={styles.rowSub}>{new Date(item.record_date).toLocaleDateString()}</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.rowTitle}>{item.title}</Text>
-                    <Text style={styles.rowSub}>{item.date}</Text>
-                  </View>
-                </View>
-              ))}
+                ))
+              ) : (
+                <Text style={styles.emptyText}>No records found</Text>
+              )}
             </View>
 
             {/* Up Next / Action Card */}
-            <View style={[styles.card, styles.specialCard]}>
-              <Text style={[styles.cardTitle, { color: '#fff' }]}>Next Step</Text>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionMain}>Annual Dental Checkup</Text>
-                <Text style={styles.actionSub}>Dr. Sarah Smith • Friday, 10:00 AM</Text>
-                <TouchableOpacity style={styles.actionButton}>
-                  <Text style={styles.actionButtonText}>Book Appointment</Text>
-                </TouchableOpacity>
+            {appointments.length > 0 && (
+              <View style={[styles.card, styles.specialCard]}>
+                <Text style={[styles.cardTitle, { color: '#fff' }]}>Next Step</Text>
+                <View style={styles.actionContent}>
+                  <Text style={styles.actionMain}>{appointments[0].notes || 'Dental Session'}</Text>
+                  <Text style={styles.actionSub}>{appointments[0].dentist_name || 'Dr. Osra'} • {appointments[0].appointment_date} {appointments[0].appointment_time}</Text>
+                  <TouchableOpacity style={styles.actionButton} onPress={() => router.push('/my-appointment')}>
+                    <Text style={styles.actionButtonText}>View Details</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            )}
 
           </View>
 
@@ -625,5 +678,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: COLOR_SUBTEXT,
+    textAlign: 'center',
+    marginVertical: 10,
   },
 });

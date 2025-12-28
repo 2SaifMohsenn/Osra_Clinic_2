@@ -1,3 +1,7 @@
+import pytesseract
+import json
+import urllib.request
+import urllib.parse
 from django.shortcuts import render
 
 from rest_framework.viewsets import ModelViewSet
@@ -11,6 +15,25 @@ from .serializers import *
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+
+# Configure pytesseract at module level
+import platform
+import os
+try:
+    import pytesseract
+    if platform.system() == 'Windows':
+        possible_paths = [
+            r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+            r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                print(f"[STARTUP] Tesseract configured at: {path}")
+                break
+except ImportError:
+    print("[STARTUP] pytesseract not installed")
+    pytesseract = None
 
 
 class PatientViewSet(ModelViewSet):
@@ -66,34 +89,49 @@ def ocr_process_view(request):
     file = request.FILES.get('file')
     if not file:
         return Response({'message': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
-    # Try to perform OCR using pytesseract + Pillow if available
+    
+    print(f"\n[OCR] Processing file: {file.name}")
     text = None
-    try:
-        import importlib, importlib.util, io
-        Image = None
-        if importlib.util.find_spec('PIL.Image') is not None:
-            Image = importlib.import_module('PIL.Image')
+    error_msg = None
+    
+    # Check if dependencies are available
+    if pytesseract is None:
+        error_msg = "pytesseract not installed"
+        print(f"[OCR] Error: {error_msg}")
+    else:
         try:
-            pytesseract = importlib.import_module('pytesseract')
-        except Exception:
-            pytesseract = None
-
-        # Only process if pytesseract and Pillow are available
-        if pytesseract is not None and Image is not None:
-            # read file bytes
+            from PIL import Image
+            import io
+            
+            # Read and process the image
             data = file.read()
-            try:
-                image = Image.open(io.BytesIO(data))
-                image = image.convert('RGB')
-                text = pytesseract.image_to_string(image)
-            except Exception:
-                # If Pillow cannot open (e.g., PDF), fallback to simulated
-                text = None
-    except Exception:
-        text = None
+            image = Image.open(io.BytesIO(data))
+            image = image.convert('RGB')
+            
+            print(f"[OCR] Image loaded: {image.size} pixels, mode: {image.mode}")
+            
+            # Perform OCR
+            text = pytesseract.image_to_string(image)
+            
+            print(f"[OCR] Extracted {len(text)} characters")
+            if text and text.strip():
+                print(f"[OCR] Text preview: {text[:100].replace(chr(10), ' ')}...")
+            else:
+                error_msg = "OCR returned empty/whitespace text"
+                print(f"[OCR] Warning: {error_msg}")
+                
+        except ImportError as e:
+            error_msg = f"PIL/Pillow not installed: {str(e)}"
+            print(f"[OCR] Error: {error_msg}")
+        except Exception as e:
+            error_msg = f"OCR processing error: {type(e).__name__}: {str(e)}"
+            print(f"[OCR] Error: {error_msg}")
+            import traceback
+            traceback.print_exc()
 
-    if not text:
-        # Intelligent Mock: If filename looks like a medical doc, return realistic data
+    # Fallback to simulated data if OCR failed
+    if not text or text.strip() == '':
+        print(f"[OCR] Using fallback data. Reason: {error_msg or 'empty result'}")
         fname = file.name.lower()
         if 'presc' in fname or 'rx' in fname or 'test' in fname:
             text = "CITY CLINIC - MEDICAL SERVICES\n\nDIAGNOSIS: Chronic Sinusitis\nPRESCRIPTION: Amoxicillin 500mg\nOne tablet daily for 7 days.\nDATE: OCT 26, 2023"
@@ -103,56 +141,78 @@ def ocr_process_view(request):
     return Response({'text': text})
 
 
+
+
+
 @api_view(['POST'])
-@parser_classes([MultiPartParser])
+@parser_classes([MultiPartParser, JSONParser])
 def acr_process_view(request):
+    """
+    Extracts medications from either an uploaded image (via OCR) or raw text (via Voice Dictation).
+    """
     file = request.FILES.get('file')
-    if not file:
-        return Response({'message': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+    text_input = request.data.get('text')
     
-    # Try real OCR first
-    ocr_text = None
-    try:
-        import importlib, importlib.util, io
-        Image = None
-        if importlib.util.find_spec('PIL.Image') is not None:
-            Image = importlib.import_module('PIL.Image')
+    ocr_text = ""
+    
+    # 1. Handle File Upload (OCR)
+    if file:
+        print(f"[ACR] Processing file: {file.name}")
         try:
-            pytesseract = importlib.import_module('pytesseract')
-        except Exception:
-            pytesseract = None
+            import importlib.util, io
+            Image = None
+            if importlib.util.find_spec('PIL.Image') is not None:
+                Image = importlib.import_module('PIL.Image')
+            
+            # Use module-level pytesseract configured at startup
+            # Note: global 'pytesseract' is available from module-level import
+            if 'pytesseract' in globals() and globals()['pytesseract'] is not None and Image is not None:
+                data = file.read()
+                try:
+                    image = Image.open(io.BytesIO(data))
+                    image = image.convert('RGB')
+                    ocr_text = globals()['pytesseract'].image_to_string(image)
+                    print(f"[ACR] OCR Extracted: {len(ocr_text)} chars")
+                except Exception as e:
+                    print(f"[ACR] OCR Image Error: {e}")
+                    ocr_text = ""
+        except Exception as e:
+            print(f"[ACR] OCR Setup Error: {e}")
+            ocr_text = ""
 
-        if pytesseract is not None and Image is not None:
-            data = file.read()
-            try:
-                image = Image.open(io.BytesIO(data))
-                image = image.convert('RGB')
-                ocr_text = pytesseract.image_to_string(image)
-            except Exception:
-                ocr_text = None
-    except Exception:
-        ocr_text = None
+    # 2. Handle Text Input (Voice Dictation)
+    elif text_input:
+        print(f"[ACR] Processing Voice Text: {text_input[:50]}...")
+        ocr_text = text_input
+    
+    else:
+        return Response({'message': 'No file or text provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Intelligent Fallback for extraction
-    if not ocr_text:
-        fname = file.name.lower()
-        if 'presc' in fname or 'rx' in fname or 'test' in fname:
-            ocr_text = "PRESCRIPTION: Amoxicillin 500mg, one tablet daily."
+    # 3. Intelligent Fallback for Simulated Data (only if OCR/Text failed to find anything)
+    if not ocr_text or ocr_text.strip() == '':
+        if file:
+            fname = file.name.lower()
+            if 'presc' in fname or 'rx' in fname or 'test' in fname:
+                ocr_text = "PRESCRIPTION: Amoxicillin 500mg, one tablet daily."
+            else:
+                ocr_text = fname
         else:
-            ocr_text = fname
+            ocr_text = ""
 
-    # naive medication extraction heuristics
+    # 4. Naive medication extraction heuristics
     import re
     meds = []
-    # look for patterns: [Name] [dosage: e.g., 500 mg or 10 mg]
-    pattern = re.compile(r"([A-Z][a-zA-Z0-9-]+)\s+(\d+\s*mg|\d+mg|\d+\s*mcg)\b", re.IGNORECASE)
+    
+    # Heuristic 1: [Name] [dosage: e.g., 500 mg or 10 mg or 1g]
+    # Handle optional "take", "one", "daily" etc around it
+    pattern = re.compile(r"([A-Z][a-zA-Z0-9-]+)\s+(\d+\s*(?:mg|mcg|g|ml|units))\b", re.IGNORECASE)
     for m in pattern.finditer(ocr_text):
         name = m.group(1)
         dose = m.group(2)
         meds.append({'medication': name, 'dosage': dose})
 
-    # a second heuristic for common words 'tablet', 'capsule'
-    pattern2 = re.compile(r"([A-Z][a-zA-Z0-9-]+)\s+\b(tablet|capsule|tab|cap)\b", re.IGNORECASE)
+    # Heuristic 2: [Name] followed by 'tablet', 'capsule', 'tab', 'cap'
+    pattern2 = re.compile(r"([A-Z][a-zA-Z0-9-]+)\s+\b(tablet|capsule|tab|cap|pill|syrup)\b", re.IGNORECASE)
     for m in pattern2.finditer(ocr_text):
         name = m.group(1)
         dose = m.group(2)
@@ -160,11 +220,19 @@ def acr_process_view(request):
         if not any(med['medication'].lower() == name.lower() for med in meds):
             meds.append({'medication': name, 'dosage': f"1 {dose}"})
 
-    # If still no meds found, but filename is clinical
-    if not meds and ('presc' in str(file.name).lower() or 'rx' in str(file.name).lower()):
-        meds.append({'medication': 'Amoxicillin', 'dosage': '500mg'})
+    # Heuristic 3: Common meds lookup (simple seed list)
+    common_meds = ['Panadol', 'Advil', 'Aspirin', 'Lipitor', 'Metformin', 'Amoxicillin', 'Augmentin']
+    for cm in common_meds:
+        if cm.lower() in ocr_text.lower():
+            if not any(med['medication'].lower() == cm.lower() for med in meds):
+                # Try to find dose near it
+                dose_match = re.search(fr"{cm}.*?(\d+\s*(?:mg|g|ml))", ocr_text, re.IGNORECASE)
+                dose = dose_match.group(1) if dose_match else "dosage as directed"
+                meds.append({'medication': cm, 'dosage': dose})
 
-    return Response({'found': meds})
+    print(f"[ACR] Extracted {len(meds)} medications")
+    return Response({'found': meds, 'raw_text': ocr_text})
+
 
 
 @api_view(['POST'])
@@ -197,6 +265,60 @@ def nlp_process_view(request):
         },
         'status': 'Processed'
     })
+
+@api_view(['GET'])
+def disease_search_proxy(request):
+    """
+    Proxy view for Human Disease Ontology API.
+    Endpoint: https://api.disease-ontology.org/v1/terms/search
+    """
+    query = request.query_params.get('q', '')
+    if not query:
+        return Response([], status=status.HTTP_200_OK)
+
+    try:
+        print(f"[DOBI] Searching Human Disease Ontology via EBI OLS for: {query}")
+        # Using EBI OLS as it is the most robust and stable aggregator for DOID
+        base_url = "https://www.ebi.ac.uk/ols/api/search"
+        params = urllib.parse.urlencode({
+            'q': query,
+            'ontology': 'doid',
+            'rows': 20
+        })
+        url = f"{base_url}?{params}"
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
+        
+        # Bypass SSL verification if it fails on the server
+        import ssl
+        context = ssl._create_unverified_context()
+        
+        with urllib.request.urlopen(req, timeout=10, context=context) as response:
+            if response.status == 200:
+                raw_data = json.loads(response.read().decode())
+                ols_results = raw_data.get('response', {}).get('docs', [])
+                
+                # Map OLS results to the format expected by our frontend (DO-KB style)
+                mapped_results = []
+                for item in ols_results:
+                    mapped_results.append({
+                        'doid': item.get('obo_id', 'Unknown'),
+                        'lbl': item.get('label', 'No Label'),
+                        'def': (item.get('description', [""])[0]) if item.get('description') else "",
+                        'synonyms': item.get('synonym', []),
+                        'xrefs': [] # OLS search doesn't return full xrefs by default
+                    })
+                
+                print(f"[DOBI] Found {len(mapped_results)} results")
+                return Response(mapped_results)
+            else:
+                print(f"[DOBI] OLS API Error Status: {response.status}")
+                return Response({'error': f'OLS API returned status {response.status}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as e:
+        import traceback
+        print(f"[DOBI] Search Exception: {str(e)}")
+        traceback.print_exc()
+        return Response({'error': f'Search service unavailable: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 
