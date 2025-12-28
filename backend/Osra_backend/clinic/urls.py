@@ -1,6 +1,13 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import *
+from .views import (
+    PatientViewSet, DentistViewSet, AppointmentViewSet,
+    AppointmentTreatmentViewSet, TreatmentDrugViewSet,
+    InvoiceViewSet, PaymentViewSet, MedicalRecordViewSet, AdminViewSet,
+    patient_signup, dentist_signup, login_view,
+    change_patient_password, change_dentist_password, change_admin_password,
+    ocr_process_view, acr_process_view, nlp_process_view, disease_search_proxy
+)
 
 router = DefaultRouter()
 router.register("patients", PatientViewSet)
@@ -26,4 +33,5 @@ urlpatterns = router.urls + [
     path("process/ocr/", ocr_process_view, name="process-ocr"),
     path("process/acr/", acr_process_view, name="process-acr"),
     path("process/nlp/", nlp_process_view, name="process-nlp"),
+    path("process/disease-search/", disease_search_proxy, name="disease-search"),
 ]

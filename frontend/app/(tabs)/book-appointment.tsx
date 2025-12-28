@@ -9,11 +9,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-
 import { getDentists } from '@/src/api/dentists';
-import { createAppointment } from '@/src/api/appointments';
+import { createAppointment, updateAppointment, getAppointments } from '@/src/api/appointments';
 import { getUser } from '@/src/utils/session';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 const logo = require('@/assets/images/logo_osra.png');
 const PRIMARY = '#0EA5E9';
@@ -63,17 +62,31 @@ export default function BookAppointment({ navigation }: any) {
   const [loading, setLoading] = useState(false);
 
   const router = useRouter();
+  const { rescheduleId } = useLocalSearchParams();
 
   useEffect(() => {
     (async () => {
       try {
         const list = await getDentists();
         setDentists(list);
+
+        if (rescheduleId) {
+          // Load existing appointment to pre-fill
+          const all = await getAppointments();
+          const existing = all.find((a: any) => a.id === Number(rescheduleId));
+          if (existing) {
+            setSelectedDentist(existing.dentist);
+            setSelectedService(existing.notes);
+            setSelectedDate(existing.appointment_date);
+            // Pre-fill time logic (convert 24h to 12h if needed, or just match if it's in TIMESLOTS)
+            // For simplicity, we just set the date and dentist, letting them pick a new time
+          }
+        }
       } catch (e) {
         console.log('failed to load dentists', e);
       }
     })();
-  }, []);
+  }, [rescheduleId]);
 
   const handleConfirm = async () => {
     if (!selectedDentist) return alert('Please select a dentist');
@@ -89,21 +102,29 @@ export default function BookAppointment({ navigation }: any) {
 
     setLoading(true);
     try {
-      await createAppointment({
-        patient: patientId,
-        dentist: selectedDentist,
-        appointment_date: selectedDate,
-        appointment_time,
-        status: 'upcoming',
-        notes: selectedService,
-      });
-
-      alert('Appointment created');
-      // go to my appointments
+      if (rescheduleId) {
+        await updateAppointment(Number(rescheduleId), {
+          dentist: selectedDentist,
+          appointment_date: selectedDate,
+          appointment_time,
+          notes: selectedService,
+        });
+        alert('Appointment updated successfully');
+      } else {
+        await createAppointment({
+          patient: patientId,
+          dentist: selectedDentist,
+          appointment_date: selectedDate,
+          appointment_time,
+          status: 'upcoming',
+          notes: selectedService,
+        });
+        alert('Appointment created successfully');
+      }
       router.push('/my-appointment');
     } catch (e) {
-      console.log('create appointment err', e);
-      alert('Failed to create appointment');
+      console.log('appointment action err', e);
+      alert('Failed to process appointment');
     } finally {
       setLoading(false);
     }
@@ -122,8 +143,10 @@ export default function BookAppointment({ navigation }: any) {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.title}>Book Appointment</Text>
-      <Text style={styles.subText}>Schedule a new visit with our trusted dentists.</Text>
+      <Text style={styles.title}>{rescheduleId ? 'Reschedule Session' : 'Book Appointment'}</Text>
+      <Text style={styles.subText}>
+        {rescheduleId ? 'Modify your existing visit details below.' : 'Schedule a new visit with our trusted dentists.'}
+      </Text>
 
       {/* Dentist Selection */}
       <View style={styles.card}>
@@ -197,7 +220,9 @@ export default function BookAppointment({ navigation }: any) {
 
       {/* Confirm Button */}
       <TouchableOpacity style={[styles.primaryBtn, loading && { opacity: 0.6 }]} onPress={handleConfirm} disabled={loading}>
-        <Text style={styles.primaryBtnText}>{loading ? 'Booking…' : 'Confirm Appointment'}</Text>
+        <Text style={styles.primaryBtnText}>
+          {loading ? 'Processing…' : rescheduleId ? 'Save Changes' : 'Confirm Appointment'}
+        </Text>
       </TouchableOpacity>
 
       <View style={{ height: 30 }} />
